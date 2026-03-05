@@ -1,7 +1,6 @@
 ## .NET / Visual Studio
 bin/
 obj/
-Lib/
 *.user
 *.suo
 *.cache
