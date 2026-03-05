@@ -1,0 +1,54 @@
+{
+  "ui": {
+    "title": "¿A qué jugamos hoy?",
+    "topMost": true,
+    "minImageSizePx": 180,
+    "imageHeightRatio": 0.32,
+    "imageWidthRatioPerOption": 0.40
+  },
+  "paths": {
+    "toolsRoot": "F:\\",
+    "imagesRoot": "Img\\",
+    "networkWaitSeconds": 15
+  },
+  "music": {
+    "enabled": true,
+    "musicRoot": "Music",
+    "files": [],
+    "volume": 100,
+    "audioDevice": "MX27UC (NVIDIA High Definition Audio)"
+  },
+  "Autor": {
+    "Quien": "2026.Trume76"
+  },
+  "Depuracion": {
+    "Activa": true
+  },
+  "options": [
+    {
+      "label": "HyperSpin 12tb",
+      "exe": "Player 3 MAX\\Player 3 MAX\\Player 3 MAX.exe",
+      "image": "shell1.png",
+      "waitForProcessName": "Player 3 MAX.exe"
+    },
+    {
+      "label": "CoinOps Arcade Next",
+      "exe": "[FrontEnd - CoinOps]\\CoinOPS-Next2-Standalone\\CoinOPS Next 2 (Standalone)\\CoinOPS.exe",
+      "image": "shell2.png",
+      "waitForProcessName": "CoinOPS.exe"
+    },
+    {
+      "label": "CoinOps Legens",
+      "exe": "[FrontEnd - CoinOps]\\CoinOPS Collections LEGENDS\\CoinOPS Collections LEGENDS\\Collections LEGENDS.exe",
+      "image": "shell3.png",
+      "waitForProcessName": "Collections LEGENDS.exe"
+    },
+    {
+      "label": "CoinOps Arcades",
+      "exe": "[FrontEnd - CoinOps]\\CoinOPS Collections ARCADES\\CoinOPS Collections ARCADES\\Collections ARCADES.exe",
+      "image": "shell1.png",
+      "waitForProcessName": "Collections ARCADES.exe"
+    }
+  ]
+}
+

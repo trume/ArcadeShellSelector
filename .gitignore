@@ -1,0 +1,20 @@
+## .NET / Visual Studio
+bin/
+obj/
+Lib/
+*.user
+*.suo
+*.cache
+*.vs/
+.vs/
+
+## Debug logs
+debug.log
+launch_debug.log
+music_debug.log
+video_debug.log
+
+## OS files
+Thumbs.db
+Desktop.ini
+.DS_Store
