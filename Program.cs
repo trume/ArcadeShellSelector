@@ -25,13 +25,13 @@ namespace ArcadeShellSelector
             RunApp();
         }
 
-        // Separate method so the JIT doesn't resolve Form1's dependency
+        // Separate method so the JIT doesn't resolve Launcher's dependency
         // assemblies until after AssemblyResolve is registered.
         [MethodImpl(MethodImplOptions.NoInlining)]
         private static void RunApp()
         {
             ApplicationConfiguration.Initialize();
-            Application.Run(new Form1());
+            Application.Run(new Launcher());
         }
     }
 }

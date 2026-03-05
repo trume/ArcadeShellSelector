@@ -6,7 +6,7 @@ using System.Text.Json.Serialization;
 
 namespace ArcadeShellSelector
 {
-    // Root config - public so other classes (Form1, MusicPlayer) can reference it
+    // Root config - public so other classes (Launcher, MusicPlayer) can reference it
     public sealed class AppConfig
     {
         [JsonPropertyName("ui")]
