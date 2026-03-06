@@ -266,7 +266,6 @@ namespace ArcadeShellSelector
             spectrumAnalyzer = new SpectrumAnalyzer();
             spectrumPanel = new SpectrumPanel(spectrumAnalyzer)
             {
-                Size = new Size(220, 60),
                 Dock = DockStyle.Fill,
             };
 
@@ -278,8 +277,7 @@ namespace ArcadeShellSelector
                 TransparencyKey = Color.Magenta,
                 ShowInTaskbar = false,
                 StartPosition = FormStartPosition.Manual,
-                Size = new Size(220, 60),
-                Opacity = 0.35,
+                Opacity = 0.20,
             };
             _spectrumForm.Controls.Add(spectrumPanel);
 
@@ -303,11 +301,7 @@ namespace ArcadeShellSelector
         private void SyncSpectrumFormBounds()
         {
             if (_spectrumForm == null) return;
-            int sw = _spectrumForm.Width;
-            int sh = _spectrumForm.Height;
-            int cx = this.Left + (this.Width - sw) / 2;
-            int cy = this.Top + (this.Height - sh) / 2;
-            _spectrumForm.Location = new Point(cx, cy);
+            _spectrumForm.Bounds = this.Bounds;
         }
 
         private void WirePictureBox(PictureBox pb, string exePath, string? waitForProcessName)
@@ -388,17 +382,18 @@ namespace ArcadeShellSelector
         {
             LayoutControls();
 
-            // Show the transparent overlay form on top of the video surface.
-            if (_overlayForm != null)
-            {
-                SyncOverlayBounds();
-                _overlayForm.Show(this); // Owner = this: overlay stays on top, auto-hides on minimize
-            }
-
+            // Show spectrum form FIRST so it sits behind the overlay (between video and UI)
             if (_spectrumForm != null)
             {
                 SyncSpectrumFormBounds();
-                _spectrumForm.Show(this); // Owner = this: auto-close/minimize with main form
+                _spectrumForm.Show(this);
+            }
+
+            // Show the transparent overlay form on top — UI controls stay in front
+            if (_overlayForm != null)
+            {
+                SyncOverlayBounds();
+                _overlayForm.Show(this);
             }
 
             TryStartBackground();
