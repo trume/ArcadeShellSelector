@@ -8,7 +8,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using SharpDX.XInput;
-using System.Runtime.InteropServices;
 
 namespace ArcadeShellSelector
 {
@@ -24,14 +23,6 @@ namespace ArcadeShellSelector
         private readonly List<(PictureBox Pic, Label Label, string ExePath, string? WaitForProcessName)> optionUis = new();
         private readonly Dictionary<PictureBox, Rectangle> _originalBounds = new();
 
-        // --- new fields to preserve/restore launcher window state ---
-        private Rectangle? _savedBounds;
-        private FormWindowState _savedWindowState;
-        private bool _savedTopMost;
-        private bool _savedShowInTaskbar;
-        private FormBorderStyle _savedFormBorderStyle;
-        private FormStartPosition _savedStartPosition;
-        // --- end new fields ---
         private MusicPlayer? musicPlayer;
         private VideoBackground? videoBackground;
         private SpectrumAnalyzer? spectrumAnalyzer;
@@ -43,6 +34,7 @@ namespace ArcadeShellSelector
         private PictureBox? autorIcon;
         private PictureBox? selectedPic;
         private bool _childRunning;
+        private Task? _resumeTask;
         private CancellationTokenSource? _musicDiagCts;
 
         public Launcher()
@@ -519,86 +511,7 @@ namespace ArcadeShellSelector
                 ResetZoom(pb);
         }
 
-        private const int SW_SHOWMAXIMIZED = 3;
-        private static readonly IntPtr HWND_BOTTOM = new IntPtr(1);
-        private const uint SWP_NOSIZE = 0x0001;
-        private const uint SWP_NOMOVE = 0x0002;
-        private const uint SWP_NOACTIVATE = 0x0010;
-
-        [DllImport("user32.dll")]
-        private static extern bool SetForegroundWindow(IntPtr hWnd);
-
-        [DllImport("user32.dll")]
-        private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-
-        [DllImport("user32.dll")]
-        private static extern IntPtr GetForegroundWindow();
-
-        [DllImport("user32.dll")]
-        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
-
-        [DllImport("kernel32.dll")]
-        private static extern uint GetCurrentThreadId();
-
-        [DllImport("user32.dll")]
-        private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
-
-        [DllImport("user32.dll")]
-        private static extern bool SetWindowPos(
-            IntPtr hWnd,
-            IntPtr hWndInsertAfter,
-            int X,
-            int Y,
-            int cx,
-            int cy,
-            uint uFlags);
-
         private void LogLaunch(string msg) => DebugLogger.Log("LAUNCH", msg);
-
-        private void ForceBringToFront()
-        {
-            try
-            {
-                var hwnd = this.Handle;
-
-                // Attach to the foreground window's thread so SetForegroundWindow
-                // is allowed by Windows even if we don't own the foreground.
-                var fgHwnd = GetForegroundWindow();
-                var fgThread = GetWindowThreadProcessId(fgHwnd, out _);
-                var curThread = GetCurrentThreadId();
-                bool attached = false;
-                if (fgThread != curThread)
-                    attached = AttachThreadInput(curThread, fgThread, true);
-
-                ShowWindow(hwnd, SW_SHOWMAXIMIZED);
-                SetForegroundWindow(hwnd);
-
-                if (attached)
-                    AttachThreadInput(curThread, fgThread, false);
-            }
-            catch { }
-
-            // Non-blocking retries in case the first attempt didn't succeed
-            int retries = 0;
-            var timer = new System.Windows.Forms.Timer { Interval = 150 };
-            timer.Tick += (_, __) =>
-            {
-                try
-                {
-                    var hwnd = this.Handle;
-                    if (GetForegroundWindow() == hwnd || ++retries >= 6)
-                    {
-                        timer.Stop();
-                        timer.Dispose();
-                        return;
-                    }
-                    ShowWindow(hwnd, SW_SHOWMAXIMIZED);
-                    SetForegroundWindow(hwnd);
-                }
-                catch { timer.Stop(); timer.Dispose(); }
-            };
-            timer.Start();
-        }
 
         private async Task OnOptionClickedAsync(PictureBox clickedPic, string exePath, string? waitForProcessName)
         {
@@ -606,6 +519,14 @@ namespace ArcadeShellSelector
             _childRunning = true;
 
             LogLaunch($"--- OnOptionClickedAsync: exePath={exePath}, waitFor={waitForProcessName}");
+
+            // Wait for any pending resume from the previous launch to complete
+            // before calling Stop/Pause (prevents LibVLC race condition)
+            if (_resumeTask != null)
+            {
+                try { await _resumeTask; } catch { }
+                _resumeTask = null;
+            }
 
             selectedPic = clickedPic;
             RefreshSelectionVisuals();
@@ -618,21 +539,22 @@ namespace ArcadeShellSelector
             // stop XInput polling so child app gets exclusive gamepad
             try { xinputTimer?.Stop(); } catch { }
 
-            // stop music while child runs (resume later)
-            try { musicPlayer?.Stop(); } catch { }
-
-            // stop spectrum
+            // stop spectrum (lightweight, safe on UI thread)
             try { spectrumPanel?.StopRefresh(); } catch { }
             try { spectrumAnalyzer?.Stop(); } catch { }
 
-            // pause video background
-            try { videoBackground?.Pause(); } catch { }
+            // Hide owned forms BEFORE minimizing to avoid WinForms owned-form restore issues
+            try { if (_overlayForm != null) _overlayForm.Visible = false; } catch { }
+            try { if (_spectrumForm != null) _spectrumForm.Visible = false; } catch { }
 
-            // save current window state/position before launching
-            SaveLauncherWindowState();
+            // Stop music & pause video on background thread (LibVLC Stop() is blocking)
+            await Task.Run(() =>
+            {
+                try { musicPlayer?.Stop(); } catch { }
+                try { videoBackground?.Pause(); } catch { }
+            });
 
-            // minimize launcher — no Hide()/Show() or ShowInTaskbar changes
-            // which cause handle recreation and the tiny-window bug
+            // minimize launcher
             try { WindowState = FormWindowState.Minimized; } catch { }
 
             // run and wait (RunSelectedApp returns error string or null)
@@ -640,40 +562,57 @@ namespace ArcadeShellSelector
 
             LogLaunch($"--- RunSelectedApp returned, error={error ?? "(none)"}, restoring UI...");
 
-            // restore UI on UI thread
-            BeginInvoke(new Action(() =>
+            // Restore window — toggle TopMost to bypass Windows focus-steal prevention
+            try
             {
-                try
-                {
-                    // restore saved window state & bounds
-                    RestoreLauncherWindowState();
-                }
-                catch { }
+                WindowState = FormWindowState.Maximized;
+                TopMost = true;
+                Activate();
+                if (!config.Ui.TopMost) TopMost = false;
+            }
+            catch { }
 
-                // resume video background
+            // Small delay to let WinForms finish processing the maximize before showing owned forms
+            await Task.Delay(200);
+
+            // Re-show owned forms
+            try
+            {
+                SyncSpectrumFormBounds();
+                if (_spectrumForm != null) _spectrumForm.Visible = true;
+                SyncOverlayBounds();
+                if (_overlayForm != null)
+                {
+                    _overlayForm.Visible = true;
+                    _overlayForm.BringToFront();
+                }
+            }
+            catch { }
+
+            // Resume video & music on a background thread (store task so next launch can await it)
+            _resumeTask = Task.Run(() =>
+            {
                 try { videoBackground?.Resume(); } catch { }
-
-                // restart music if available
                 try { musicPlayer?.Resume(); } catch { }
+            });
 
-                // restart spectrum
-                try { spectrumAnalyzer?.Start(); } catch { }
-                try { spectrumPanel?.StartRefresh(); } catch { }
+            // Restart spectrum
+            try { spectrumAnalyzer?.Start(); } catch { }
+            try { spectrumPanel?.StartRefresh(); } catch { }
 
-                foreach (var (pic, _, _, _) in optionUis)
-                    pic.Enabled = true;
-                closeButton.Enabled = true;
+            foreach (var (pic, _, _, _) in optionUis)
+                pic.Enabled = true;
+            closeButton.Enabled = true;
 
-                // resume XInput polling
-                try { xinputTimer?.Start(); } catch { }
+            // resume XInput polling
+            try { xinputTimer?.Start(); } catch { }
 
-                _childRunning = false;
+            _childRunning = false;
 
-                if (!string.IsNullOrEmpty(error))
-                {
-                    MessageBox.Show(error, "Launcher", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                }
-            }));
+            if (!string.IsNullOrEmpty(error))
+            {
+                MessageBox.Show(error, "Launcher", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
         }
  
         private string? RunSelectedApp(string exePath, string? waitForProcessName = null)
@@ -939,50 +878,6 @@ namespace ArcadeShellSelector
             try { videoBackground?.Stop(); } catch { }
             try { videoBackground?.Dispose(); } catch { }
             base.OnFormClosed(e);
-        }
-
-        // --- helpers para guardar/restaurar estado y bounds de la ventana del lanzador ---
-        private void SaveLauncherWindowState()
-        {
-            try
-            {
-                _savedWindowState = this.WindowState;
-                _savedShowInTaskbar = this.ShowInTaskbar;
-                _savedTopMost = this.TopMost;
-                _savedFormBorderStyle = this.FormBorderStyle;
-                _savedStartPosition = this.StartPosition;
-
-                // Si la ventana está en estado Normal, guardamos Bounds.
-                // Si está maximizada/minimizada, usamos RestoreBounds para obtener la posición/size previa.
-                if (this.WindowState == FormWindowState.Normal)
-                    _savedBounds = this.Bounds;
-                else
-                    _savedBounds = this.RestoreBounds;
-            }
-            catch
-            {
-                _savedBounds = null;
-            }
-        }
-
-        private void RestoreLauncherWindowState()
-        {
-            try
-            {
-                // Simply maximize — the form was only minimized, all properties
-                // (FormBorderStyle.None, etc.) are still intact. No need to touch
-                // ShowInTaskbar or FormBorderStyle which cause handle recreation.
-                WindowState = FormWindowState.Maximized;
-
-                ForceBringToFront();
-
-                TopMost = config.Ui.TopMost;
-                BringToFront();
-                Activate();
-
-                SyncOverlayBounds();
-            }
-            catch { }
         }
 
         private void TryStartBackground()

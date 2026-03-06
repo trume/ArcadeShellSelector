@@ -16,7 +16,7 @@
     {
       "label": "HyperSpin 12tb",
       "exe": "Player 3 MAX\\Player 3 MAX\\Player 3 MAX.exe",
-      "image": "C:\\Users\\trume76\\Documents\\67cb4277-9e8d-4bb6-9cdb-6e97d2ac5f20.jpg",
+      "image": "C:\\Users\\trume76\\ArcadeShellSelector\\bin\\Release\\net10.0-windows\\Img\\shell.png",
       "waitForProcessName": "Player 3 MAX.exe"
     },
     {
