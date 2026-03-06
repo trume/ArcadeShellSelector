@@ -21,4 +21,24 @@
     </Content>
   </ItemGroup>
 
+  <Target Name="CopyConfiguratorExe" AfterTargets="Build">
+    <Copy SourceFiles="$(TargetDir)ArcadeShellConfigurator.exe"
+          DestinationFolder="..\bin\$(Configuration)\net10.0-windows" />
+  </Target>
+
+  <Target Name="CopyConfiguratorOutput" AfterTargets="Build">
+    <ItemGroup>
+      <ConfiguratorFiles Include="$(TargetDir)ArcadeShellConfigurator.exe" />
+      <ConfiguratorFiles Include="$(TargetDir)ArcadeShellConfigurator.dll" />
+      <ConfiguratorFiles Include="$(TargetDir)ArcadeShellConfigurator.pdb" />
+      <ConfiguratorFiles Include="$(TargetDir)ArcadeShellConfigurator.runtimeconfig.json" />
+      <ConfiguratorFiles Include="$(TargetDir)ArcadeShellConfigurator.deps.json" />
+      <ConfiguratorFiles Include="$(TargetDir)app.ico" />
+    </ItemGroup>
+    <Copy SourceFiles="@(ConfiguratorFiles)"
+          DestinationFolder="..\bin\$(Configuration)\net10.0-windows"
+          SkipUnchangedFiles="true"
+          OverwriteReadOnlyFiles="true" />
+  </Target>
+
 </Project>

@@ -88,6 +88,9 @@ namespace ArcadeShellSelector
         [JsonPropertyName("image")]
         public string Image { get; set; } = string.Empty;
 
+        [JsonPropertyName("thumbVideo")]
+        public string? ThumbVideo { get; set; }
+
         // optional: can be "CoinOPS.exe" or full "CoinOPS.exe" — RunSelectedApp normaliza.
         [JsonPropertyName("waitForProcessName")]
         public string? WaitForProcessName { get; set; }

@@ -6,7 +6,9 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
+using LibVLCSharp.Shared;
 using SharpDX.XInput;
 
 namespace ArcadeShellSelector
@@ -22,6 +24,14 @@ namespace ArcadeShellSelector
         private readonly AppConfig config;
         private readonly List<(PictureBox Pic, Label Label, string ExePath, string? WaitForProcessName)> optionUis = new();
         private readonly Dictionary<PictureBox, Rectangle> _originalBounds = new();
+        private readonly Dictionary<PictureBox, string> _thumbVideoPaths = new();
+        private readonly Dictionary<PictureBox, Image> _thumbOriginalImages = new();
+        private LibVLC? _thumbLibVlc;
+        private MediaPlayer? _thumbPlayer;
+        private Media? _thumbMedia;
+        private PictureBox? _thumbActivePic;
+        private IntPtr _thumbBuffer = IntPtr.Zero;
+        private int _thumbW, _thumbH;
 
         private MusicPlayer? musicPlayer;
         private VideoBackground? videoBackground;
@@ -208,6 +218,16 @@ namespace ArcadeShellSelector
                 var lbl = CreateOptionLabel(opt.Label);
 
                 optionUis.Add((pic, lbl, resolvedExe, waitName));
+
+                // Store thumb video path for hover preview
+                if (!string.IsNullOrWhiteSpace(opt.ThumbVideo))
+                {
+                    var resolvedThumb = opt.ThumbVideo;
+                    if (!Path.IsPathRooted(resolvedThumb))
+                        resolvedThumb = Path.Combine(AppContext.BaseDirectory, resolvedThumb);
+                    if (File.Exists(resolvedThumb))
+                        _thumbVideoPaths[pic] = resolvedThumb;
+                }
 
                 WirePictureBox(pic, resolvedExe, waitName);
                 AddOverlayControl(pic);
@@ -462,38 +482,39 @@ namespace ArcadeShellSelector
                 );
             }
 
-            closeButton.Location = new Point(
-                (w - closeButton.Width) / 2,
-                h - closeButton.Height - 40
-            );
-
-            // Place author label right under the Exit button.
-            int autorWidth = Math.Max(180, closeButton.Width + 60);
+            // --- Author + Close button on one centered line at the bottom ---
             int autorHeight = Math.Max(24, AutorApp.Font.Height + 8);
             int iconSize = autorHeight;
             int iconGap = 4;
+            int gap = 16; // gap between author text and close button
+            int bottomY = h - Math.Max(closeButton.Height, autorHeight) - 40;
+
+            // Measure total width of the combined line
+            using var gfx = CreateGraphics();
+            int textW = (int)gfx.MeasureString(AutorApp.Text, AutorApp.Font).Width + 8;
+            int autorBlockW = (autorIcon != null ? iconSize + iconGap : 0) + textW;
+            int totalLineW = autorBlockW + gap + closeButton.Width;
+            int startX = (w - totalLineW) / 2;
 
             if (autorIcon != null)
             {
                 autorIcon.Size = new Size(iconSize, iconSize);
-                int totalW = iconSize + iconGap + autorWidth;
-                int startX = closeButton.Left + (closeButton.Width - totalW) / 2;
-                int topY = closeButton.Bottom + 8;
-
-                autorIcon.Location = new Point(startX, topY);
-                AutorApp.Size = new Size(autorWidth, autorHeight);
+                autorIcon.Location = new Point(startX, bottomY + (Math.Max(closeButton.Height, autorHeight) - iconSize) / 2);
+                AutorApp.Size = new Size(textW, autorHeight);
                 AutorApp.TextAlign = ContentAlignment.MiddleLeft;
-                AutorApp.Location = new Point(startX + iconSize + iconGap, topY);
+                AutorApp.Location = new Point(startX + iconSize + iconGap, bottomY + (Math.Max(closeButton.Height, autorHeight) - autorHeight) / 2);
             }
             else
             {
-                AutorApp.Size = new Size(autorWidth, autorHeight);
-                AutorApp.TextAlign = ContentAlignment.TopCenter;
-                AutorApp.Location = new Point(
-                    closeButton.Left + (closeButton.Width - AutorApp.Width) / 2,
-                    closeButton.Bottom + 8
-                );
+                AutorApp.Size = new Size(textW, autorHeight);
+                AutorApp.TextAlign = ContentAlignment.MiddleLeft;
+                AutorApp.Location = new Point(startX, bottomY + (Math.Max(closeButton.Height, autorHeight) - autorHeight) / 2);
             }
+
+            closeButton.Location = new Point(
+                startX + autorBlockW + gap,
+                bottomY + (Math.Max(closeButton.Height, autorHeight) - closeButton.Height) / 2
+            );
 
             SyncOverlayBounds();
             SyncSpectrumFormBounds();
@@ -502,13 +523,19 @@ namespace ArcadeShellSelector
         private void PicHoverEnter(object? sender, EventArgs e)
         {
             if (sender is PictureBox pb && pb != selectedPic)
+            {
                 ApplyZoom(pb, 1.10);
+                StartThumbVideo(pb);
+            }
         }
 
         private void PicHoverLeave(object? sender, EventArgs e)
         {
             if (sender is PictureBox pb && pb != selectedPic)
+            {
                 ResetZoom(pb);
+                StopThumbVideo(pb);
+            }
         }
 
         private void LogLaunch(string msg) => DebugLogger.Log("LAUNCH", msg);
@@ -809,13 +836,126 @@ namespace ArcadeShellSelector
                 if (pic == selectedPic)
                 {
                     ApplyZoom(pic, 1.20);
+                    StartThumbVideo(pic);
                 }
                 else
                 {
                     ResetZoom(pic);
+                    if (_thumbActivePic == pic) StopThumbVideo(pic);
                 }
                 pic.Invalidate();
             }
+        }
+
+        private void StartThumbVideo(PictureBox pb)
+        {
+            if (!_thumbVideoPaths.TryGetValue(pb, out var videoPath)) return;
+            if (_thumbActivePic == pb) return; // already playing for this pic
+
+            StopThumbVideoInternal();
+
+            // Store original image so we can restore later
+            if (!_thumbOriginalImages.ContainsKey(pb) && pb.Image != null)
+                _thumbOriginalImages[pb] = pb.Image;
+
+            _thumbActivePic = pb;
+            _thumbW = pb.Width;
+            _thumbH = pb.Height;
+
+            // Allocate buffer for raw video frames (BGRA, 4 bytes/pixel)
+            var bufSize = _thumbW * _thumbH * 4;
+            if (_thumbBuffer != IntPtr.Zero)
+                Marshal.FreeHGlobal(_thumbBuffer);
+            _thumbBuffer = Marshal.AllocHGlobal(bufSize);
+
+            try
+            {
+                if (_thumbPlayer == null)
+                {
+                    // Separate LibVLC instance with audio fully disabled so it
+                    // cannot interfere with the main music player's output.
+                    _thumbLibVlc = new LibVLC("--no-audio");
+                    _thumbPlayer = new MediaPlayer(_thumbLibVlc);
+                    _thumbPlayer.EndReached += (_, __) =>
+                    {
+                        _ = Task.Run(() =>
+                        {
+                            try { _thumbPlayer?.Stop(); } catch { }
+                            try { _thumbPlayer?.Play(); } catch { }
+                        });
+                    };
+                }
+                else
+                {
+                    // Stop any current playback before reconfiguring
+                    try { Task.Run(() => { try { _thumbPlayer.Stop(); } catch { } }).Wait(500); } catch { }
+                }
+
+                // Software rendering: LibVLC writes frames to our buffer instead of a native window
+                _thumbPlayer.SetVideoFormat("RV32", (uint)_thumbW, (uint)_thumbH, (uint)(_thumbW * 4));
+                _thumbPlayer.SetVideoCallbacks(ThumbLockCb, null, ThumbDisplayCb);
+
+                try { _thumbMedia?.Dispose(); } catch { }
+                _thumbMedia = new Media(_thumbLibVlc!, videoPath, FromType.FromPath);
+                _thumbMedia.AddOption(":run-time=6");       // play only 6 seconds per loop
+                _thumbMedia.AddOption(":input-repeat=65535"); // loop virtually forever
+                _thumbPlayer.Media = _thumbMedia;
+                _thumbPlayer.Play();
+            }
+            catch { }
+        }
+
+        private IntPtr ThumbLockCb(IntPtr opaque, IntPtr planes)
+        {
+            // Tell LibVLC to write the frame into our pre-allocated buffer
+            Marshal.WriteIntPtr(planes, _thumbBuffer);
+            return IntPtr.Zero;
+        }
+
+        private void ThumbDisplayCb(IntPtr opaque, IntPtr picture)
+        {
+            var pic = _thumbActivePic;
+            if (pic == null || _thumbBuffer == IntPtr.Zero) return;
+
+            try
+            {
+                // Create a Bitmap that wraps the buffer (no copy), then clone to own the data
+                using var temp = new Bitmap(_thumbW, _thumbH, _thumbW * 4,
+                    System.Drawing.Imaging.PixelFormat.Format32bppRgb, _thumbBuffer);
+                var bmp = new Bitmap(temp); // deep copy — safe after LibVLC overwrites buffer
+
+                pic.BeginInvoke(() =>
+                {
+                    if (_thumbActivePic != pic) { bmp.Dispose(); return; }
+                    var old = pic.Image;
+                    pic.Image = bmp;
+                    // Dispose old frame bitmaps, but NOT the stored original images
+                    if (old != null && !_thumbOriginalImages.ContainsValue(old))
+                        old.Dispose();
+                });
+            }
+            catch { }
+        }
+
+        private void StopThumbVideo(PictureBox pb)
+        {
+            if (_thumbActivePic != pb) return;
+            StopThumbVideoInternal();
+        }
+
+        private void StopThumbVideoInternal()
+        {
+            var pic = _thumbActivePic;
+            _thumbActivePic = null;
+
+            if (_thumbPlayer != null && _thumbPlayer.IsPlaying)
+            {
+                try { Task.Run(() => { try { _thumbPlayer.Stop(); } catch { } }).Wait(500); } catch { }
+            }
+
+            // Restore original image
+            if (pic != null && _thumbOriginalImages.TryGetValue(pic, out var orig))
+                pic.Image = orig;
         }
 
         private void Pb_Paint(object? sender, PaintEventArgs e)
@@ -873,6 +1013,17 @@ namespace ArcadeShellSelector
             try { spectrumPanel?.StopRefresh(); } catch { }
             try { spectrumAnalyzer?.Dispose(); } catch { }
             // _spectrumForm is owned, so WinForms auto-closes it.
+
+            // Stop thumb video rendering
+            try { StopThumbVideoInternal(); } catch { }
+            try { _thumbMedia?.Dispose(); } catch { }
+            try { _thumbPlayer?.Dispose(); } catch { }
+            try { _thumbLibVlc?.Dispose(); } catch { }
+            if (_thumbBuffer != IntPtr.Zero)
+            {
+                try { Marshal.FreeHGlobal(_thumbBuffer); } catch { }
+                _thumbBuffer = IntPtr.Zero;
+            }
 
             // Stop video synchronously before dispose to avoid blocking the UI thread.
             try { videoBackground?.Stop(); } catch { }

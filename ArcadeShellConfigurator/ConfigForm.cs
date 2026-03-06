@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Windows.Forms;
 using ArcadeShellSelector;
@@ -25,6 +26,7 @@ namespace ArcadeShellConfigurator
         private TextBox txtToolsRoot = null!;
         private TextBox txtImagesRoot = null!;
         private TextBox txtVideoBackground = null!;
+        private PictureBox picVideoThumb = null!;
 
         // Music tab
         private CheckBox chkMusicEnabled = null!;
@@ -78,7 +80,7 @@ namespace ArcadeShellConfigurator
         private void InitializeUI()
         {
             Text = "Arcade Shell Configurator";
-            Size = new Size(700, 520);
+            Size = new Size(820, 520);
             StartPosition = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
@@ -114,12 +116,24 @@ namespace ArcadeShellConfigurator
             var lblVideo = new Label { Text = "Video Background:", Location = new Point(16, 90), AutoSize = true };
             txtVideoBackground = new TextBox { Location = new Point(140, 87), Width = 370 };
             var btnVideo = new Button { Text = "...", Location = new Point(516, 86), Width = 30, Height = 23 };
-            btnVideo.Click += (_, _) => BrowseFile(txtVideoBackground, "Video files|*.mp4;*.avi;*.mkv;*.wmv|All files|*.*");
+            btnVideo.Click += (_, _) =>
+            {
+                BrowseAndDeployVideo();
+                RefreshVideoThumb();
+            };
+            txtVideoBackground.TextChanged += (_, _) => RefreshVideoThumb();
+            picVideoThumb = new PictureBox
+            {
+                Location = new Point(552, 82),
+                Size = new Size(80, 48),
+                SizeMode = PictureBoxSizeMode.Zoom,
+                BorderStyle = BorderStyle.FixedSingle,
+            };
 
             tabPaths.Controls.AddRange(new Control[] {
                 lblToolsRoot, txtToolsRoot, btnToolsRoot,
                 lblImagesRoot, txtImagesRoot, btnImagesRoot,
-                lblVideo, txtVideoBackground, btnVideo
+                lblVideo, txtVideoBackground, btnVideo, picVideoThumb
             });
 
             // === Music tab ===
@@ -147,14 +161,14 @@ namespace ArcadeShellConfigurator
             gridOptions = new DataGridView
             {
                 Location = new Point(10, 10),
-                Size = new Size(640, 300),
+                Size = new Size(760, 300),
                 AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
                 AllowUserToAddRows = true,
                 AllowUserToDeleteRows = true,
                 EditMode = DataGridViewEditMode.EditOnEnter,
             };
             gridOptions.Columns.Add("Label", "Label");
-            gridOptions.Columns.Add("Exe", "Executable Path");
+            gridOptions.Columns.Add("Exe", "Front End (Exe)");
             gridOptions.Columns.Add(new DataGridViewButtonColumn
             {
                 Name = "BrowseExe",
@@ -183,7 +197,25 @@ namespace ArcadeShellConfigurator
                 Width = 30,
                 AutoSizeMode = DataGridViewAutoSizeColumnMode.None,
             });
-            gridOptions.Columns.Add("WaitProcess", "Wait For Process");
+            gridOptions.Columns.Add(new DataGridViewImageColumn
+            {
+                Name = "VideoThumb",
+                HeaderText = "Video",
+                ImageLayout = DataGridViewImageCellLayout.Zoom,
+                Width = 60,
+                AutoSizeMode = DataGridViewAutoSizeColumnMode.None,
+            });
+            gridOptions.Columns.Add("ThumbVideoPath", "Thumb Video Path");
+            gridOptions.Columns["ThumbVideoPath"]!.Visible = false;
+            gridOptions.Columns.Add(new DataGridViewButtonColumn
+            {
+                Name = "BrowseThumbVideo",
+                HeaderText = "",
+                Text = "...",
+                UseColumnTextForButtonValue = true,
+                Width = 30,
+                AutoSizeMode = DataGridViewAutoSizeColumnMode.None,
+            });
             gridOptions.RowTemplate.Height = 48;
             gridOptions.CellContentClick += GridOptions_CellContentClick;
 
@@ -194,15 +226,17 @@ namespace ArcadeShellConfigurator
 
             // Bottom panel with Save/Cancel
             var bottomPanel = new Panel { Dock = DockStyle.Bottom, Height = 50 };
-            btnSave = new Button { Text = "Save", Width = 100, Height = 32, Location = new Point(480, 9), Enabled = false };
+            btnSave = new Button { Text = "Save", Width = 100, Height = 32, Location = new Point(600, 9), Enabled = false };
             btnSave.Click += BtnSave_Click;
-            var btnCancel = new Button { Text = "Cancel", Width = 100, Height = 32, Location = new Point(370, 9) };
+            var btnCancel = new Button { Text = "Cancel", Width = 100, Height = 32, Location = new Point(490, 9) };
             btnCancel.Click += (_, _) => Close();
             var btnReload = new Button { Text = "Reload", Width = 100, Height = 32, Location = new Point(16, 9) };
             btnReload.Click += (_, _) => LoadConfig();
-            var btnLaunch = new Button { Text = "Launch App", Width = 110, Height = 32, Location = new Point(590, 9) };
+            var btnDefaults = new Button { Text = "Defaults", Width = 100, Height = 32, Location = new Point(126, 9) };
+            btnDefaults.Click += BtnDefaults_Click;
+            var btnLaunch = new Button { Text = "Launch App", Width = 110, Height = 32, Location = new Point(710, 9) };
             btnLaunch.Click += BtnLaunch_Click;
-            bottomPanel.Controls.AddRange(new Control[] { btnSave, btnCancel, btnReload, btnLaunch });
+            bottomPanel.Controls.AddRange(new Control[] { btnSave, btnCancel, btnReload, btnDefaults, btnLaunch });
             Controls.Add(bottomPanel);
 
             // Wire up change tracking on all editable controls
@@ -270,7 +304,8 @@ namespace ArcadeShellConfigurator
             foreach (var opt in _config.Options)
             {
                 var thumb = LoadThumbnail(opt.Image);
-                gridOptions.Rows.Add(opt.Label, opt.Exe, "...", thumb, opt.Image, "...", opt.WaitForProcessName ?? "");
+                var vidThumb = LoadVideoThumbnail(opt.ThumbVideo);
+                gridOptions.Rows.Add(opt.Label, opt.Exe, "...", thumb, opt.Image, "...", vidThumb, opt.ThumbVideo ?? "", "...");
             }
 
             _suppressDirty = false;
@@ -299,14 +334,14 @@ namespace ArcadeShellConfigurator
                 var label = row.Cells["Label"].Value?.ToString() ?? "";
                 var exe = row.Cells["Exe"].Value?.ToString() ?? "";
                 var image = row.Cells["ImagePath"].Value?.ToString() ?? "";
-                var wait = row.Cells["WaitProcess"].Value?.ToString();
+                var thumbVideo = row.Cells["ThumbVideoPath"].Value?.ToString();
                 if (string.IsNullOrWhiteSpace(label) && string.IsNullOrWhiteSpace(exe)) continue;
                 _config.Options.Add(new OptionConfig
                 {
                     Label = label,
                     Exe = exe,
                     Image = image,
-                    WaitForProcessName = string.IsNullOrWhiteSpace(wait) ? null : wait
+                    ThumbVideo = string.IsNullOrWhiteSpace(thumbVideo) ? null : thumbVideo,
                 });
             }
         }
@@ -341,6 +376,17 @@ namespace ArcadeShellConfigurator
                 MessageBox.Show($"Error saving config:\n{ex.Message}", "Error",
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+        }
+
+        private void BtnDefaults_Click(object? sender, EventArgs e)
+        {
+            if (MessageBox.Show("Reset all settings to defaults?\nUnsaved changes will be lost.",
+                    "Restore Defaults", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                return;
+
+            _config = new AppConfig();
+            PopulateUI();
+            btnSave.Enabled = true;
         }
 
         private void BtnLaunch_Click(object? sender, EventArgs e)
@@ -389,6 +435,51 @@ namespace ArcadeShellConfigurator
                 target.Text = dlg.FileName;
         }
 
+        private void BrowseAndDeployVideo()
+        {
+            using var dlg = new OpenFileDialog
+            {
+                Filter = "Video files|*.mp4;*.avi;*.mkv;*.wmv|All files|*.*",
+                FileName = txtVideoBackground.Text
+            };
+            if (dlg.ShowDialog() != DialogResult.OK) return;
+
+            var srcFile = dlg.FileName;
+
+            // Resolve the Bkg folder next to the solution root (where config.json lives)
+            var solutionDir = Path.GetDirectoryName(_configPath) ?? ".";
+            var bkgDir = Path.Combine(solutionDir, "Bkg");
+            try { Directory.CreateDirectory(bkgDir); } catch { }
+
+            // Also deploy to the main app's output Bkg folder
+            var binBkgDir = Path.Combine(solutionDir, "bin", "Release", "net10.0-windows", "Bkg");
+            try { Directory.CreateDirectory(binBkgDir); } catch { }
+
+            // Remove existing video files from both Bkg folders
+            var videoExts = new[] { ".mp4", ".avi", ".mkv", ".wmv", ".mov", ".ogg" };
+            foreach (var dir in new[] { bkgDir, binBkgDir })
+            {
+                try
+                {
+                    foreach (var old in Directory.GetFiles(dir)
+                        .Where(f => videoExts.Contains(Path.GetExtension(f), StringComparer.OrdinalIgnoreCase)))
+                    {
+                        try { File.Delete(old); } catch { }
+                    }
+                }
+                catch { }
+            }
+
+            // Copy the new video into both Bkg folders
+            var destName = Path.GetFileName(srcFile);
+            var destSource = Path.Combine(bkgDir, destName);
+            var destBin = Path.Combine(binBkgDir, destName);
+            try { File.Copy(srcFile, destSource, true); } catch { }
+            try { File.Copy(srcFile, destBin, true); } catch { }
+
+            txtVideoBackground.Text = destSource;
+        }
+
         private void GridOptions_CellContentClick(object? sender, DataGridViewCellEventArgs e)
         {
             if (e.RowIndex < 0) return;
@@ -409,6 +500,15 @@ namespace ArcadeShellConfigurator
                 {
                     row.Cells["ImagePath"].Value = dlg.FileName;
                     row.Cells["ImageThumb"].Value = LoadThumbnail(dlg.FileName);
+                }
+            }
+            else if (colName == "BrowseThumbVideo")
+            {
+                using var dlg = new OpenFileDialog { Filter = "Video files|*.mp4;*.avi;*.mkv;*.wmv|All files|*.*" };
+                if (dlg.ShowDialog() == DialogResult.OK)
+                {
+                    row.Cells["ThumbVideoPath"].Value = dlg.FileName;
+                    row.Cells["VideoThumb"].Value = LoadVideoThumbnail(dlg.FileName);
                 }
             }
         }
@@ -446,6 +546,79 @@ namespace ArcadeShellConfigurator
                 return (Image)img.GetThumbnailImage(48, 48, () => false, IntPtr.Zero);
             }
             catch { return blank; }
+        }
+
+        private Image LoadVideoThumbnail(string? videoPath)
+        {
+            var blank = new Bitmap(1, 1);
+            if (string.IsNullOrWhiteSpace(videoPath)) return blank;
+
+            var fullPath = videoPath;
+            if (!Path.IsPathRooted(fullPath))
+            {
+                var baseDir = Path.GetDirectoryName(_configPath) ?? ".";
+                var candidate = Path.Combine(baseDir, fullPath);
+                if (File.Exists(candidate)) fullPath = candidate;
+            }
+
+            try
+            {
+                if (!File.Exists(fullPath)) return blank;
+                return GetShellThumbnail(fullPath, 80, 48) ?? blank;
+            }
+            catch { return blank; }
+        }
+
+        private void RefreshVideoThumb()
+        {
+            picVideoThumb.Image = LoadVideoThumbnail(txtVideoBackground.Text);
+        }
+
+        // --- Windows Shell thumbnail extraction (works for video, images, etc.) ---
+
+        [ComImport, Guid("bcc18b79-ba16-442f-80c4-8a59c30c463b")]
+        [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        private interface IShellItemImageFactory
+        {
+            [PreserveSig]
+            int GetImage(NativeSize size, int flags, out IntPtr phbm);
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct NativeSize
+        {
+            public int cx;
+            public int cy;
+        }
+
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = false)]
+        private static extern void SHCreateItemFromParsingName(
+            string pszPath, IntPtr pbc,
+            [In] ref Guid riid,
+            [MarshalAs(UnmanagedType.Interface)] out IShellItemImageFactory ppv);
+
+        [DllImport("gdi32.dll")]
+        private static extern bool DeleteObject(IntPtr hObject);
+
+        private static Image? GetShellThumbnail(string path, int width, int height)
+        {
+            var iid = new Guid("bcc18b79-ba16-442f-80c4-8a59c30c463b");
+            SHCreateItemFromParsingName(path, IntPtr.Zero, ref iid, out var factory);
+            var size = new NativeSize { cx = width, cy = height };
+            // Try thumbnail first (0x02), fall back to default (0x00)
+            if (factory.GetImage(size, 0x02, out var hBitmap) != 0)
+            {
+                if (factory.GetImage(size, 0x00, out hBitmap) != 0)
+                    return null;
+            }
+            try
+            {
+                return Image.FromHbitmap(hBitmap);
+            }
+            finally
+            {
+                DeleteObject(hBitmap);
+            }
         }
     }
 }
