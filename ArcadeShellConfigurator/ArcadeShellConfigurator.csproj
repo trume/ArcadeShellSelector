@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationIcon>..\app.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <!-- Share AppConfig.cs from the main project -->
+  <ItemGroup>
+    <Compile Include="..\AppConfig.cs" Link="AppConfig.cs" />
+  </ItemGroup>
+
+  <!-- Copy app.ico to output so the form can load it at runtime -->
+  <ItemGroup>
+    <Content Include="..\app.ico" Link="app.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+</Project>

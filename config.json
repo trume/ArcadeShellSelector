@@ -1,16 +1,43 @@
 {
   "ui": {
-    "title": "¿A qué jugamos hoy?",
-    "topMost": true,
-    "minImageSizePx": 180,
-    "imageHeightRatio": 0.32,
-    "imageWidthRatioPerOption": 0.40
+    "Title": "\u00BFA qu\u00E9 jugamos hoy?",
+    "TopMost": true,
+    "MinImageSizePx": 180,
+    "ImageHeightRatio": 0.32,
+    "ImageWidthRatioPerOption": 0.4
   },
   "paths": {
     "toolsRoot": "F:\\",
     "imagesRoot": "Img\\",
-    "networkWaitSeconds": 15
+    "networkWaitSeconds": 15,
+    "videoBackground": "C:\\Users\\trume76\\ArcadeShellSelector\\Bkg\\Background.mp4"
   },
+  "options": [
+    {
+      "label": "HyperSpin 12tb",
+      "exe": "Player 3 MAX\\Player 3 MAX\\Player 3 MAX.exe",
+      "image": "C:\\Users\\trume76\\Documents\\67cb4277-9e8d-4bb6-9cdb-6e97d2ac5f20.jpg",
+      "waitForProcessName": "Player 3 MAX.exe"
+    },
+    {
+      "label": "CoinOps Arcade Next",
+      "exe": "I:\\Emu\\Emulators\\Demul\\demul.exe",
+      "image": "G:\\CoinOPS Collections\\CoinOPS Collections\\CoinOPS Collections.jpg",
+      "waitForProcessName": "CoinOPS.exe"
+    },
+    {
+      "label": "CoinOps Legens",
+      "exe": "I:\\Emu\\Emulators\\Arnold\\arnold.exe",
+      "image": "G:\\CoinOPS Collections\\CoinOPS Collections\\Helper.jpg",
+      "waitForProcessName": "Collections LEGENDS.exe"
+    },
+    {
+      "label": "CoinOps Arcades",
+      "exe": "I:\\Emu\\Emulators\\Arnold\\arnold.exe",
+      "image": "G:\\CoinOPS Collections\\CoinOPS Collections\\collections\\Game and Watch\\medium_artwork\\logo\\gnw_mario.png",
+      "waitForProcessName": "Collections ARCADES.exe"
+    }
+  ],
   "music": {
     "enabled": true,
     "musicRoot": "Music",
@@ -23,32 +50,5 @@
   },
   "Depuracion": {
     "Activa": true
-  },
-  "options": [
-    {
-      "label": "HyperSpin 12tb",
-      "exe": "Player 3 MAX\\Player 3 MAX\\Player 3 MAX.exe",
-      "image": "shell1.png",
-      "waitForProcessName": "Player 3 MAX.exe"
-    },
-    {
-      "label": "CoinOps Arcade Next",
-      "exe": "[FrontEnd - CoinOps]\\CoinOPS-Next2-Standalone\\CoinOPS Next 2 (Standalone)\\CoinOPS.exe",
-      "image": "shell2.png",
-      "waitForProcessName": "CoinOPS.exe"
-    },
-    {
-      "label": "CoinOps Legens",
-      "exe": "[FrontEnd - CoinOps]\\CoinOPS Collections LEGENDS\\CoinOPS Collections LEGENDS\\Collections LEGENDS.exe",
-      "image": "shell3.png",
-      "waitForProcessName": "Collections LEGENDS.exe"
-    },
-    {
-      "label": "CoinOps Arcades",
-      "exe": "[FrontEnd - CoinOps]\\CoinOPS Collections ARCADES\\CoinOPS Collections ARCADES\\Collections ARCADES.exe",
-      "image": "shell1.png",
-      "waitForProcessName": "Collections ARCADES.exe"
-    }
-  ]
+  }
 }
-

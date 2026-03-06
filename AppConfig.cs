@@ -71,6 +71,9 @@ namespace ArcadeShellSelector
 
         [JsonPropertyName("networkWaitSeconds")]
         public int NetworkWaitSeconds { get; set; } = 15;
+
+        [JsonPropertyName("videoBackground")]
+        public string VideoBackground { get; set; } = string.Empty;
     }
 
     // NEW: Option model includes optional WaitForProcessName

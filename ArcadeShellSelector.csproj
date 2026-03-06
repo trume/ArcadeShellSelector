@@ -8,6 +8,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <Platforms>AnyCPU;x64</Platforms>
+    <DefaultItemExcludes>$(DefaultItemExcludes);ArcadeShellConfigurator\**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>

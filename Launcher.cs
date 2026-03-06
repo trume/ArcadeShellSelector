@@ -270,7 +270,8 @@ namespace ArcadeShellSelector
             };
 
             // Dedicated form for spectrum: transparent background, bars only
-            _spectrumForm = new Form
+            // Uses click-through style so it never steals clicks from the overlay.
+            _spectrumForm = new ClickThroughForm
             {
                 FormBorderStyle = FormBorderStyle.None,
                 BackColor = Color.Magenta,
@@ -1024,6 +1025,27 @@ namespace ArcadeShellSelector
             catch
             {
                 // ignore background startup errors
+            }
+        }
+    }
+
+    /// <summary>
+    /// A Form that is completely click-through (WS_EX_TRANSPARENT | WS_EX_LAYERED).
+    /// Mouse events pass through to whatever window is behind it.
+    /// Used for the spectrum visualizer so it never blocks clicks on the overlay UI.
+    /// </summary>
+    internal sealed class ClickThroughForm : Form
+    {
+        private const int WS_EX_TRANSPARENT = 0x20;
+        private const int WS_EX_LAYERED = 0x80000;
+
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                var cp = base.CreateParams;
+                cp.ExStyle |= WS_EX_TRANSPARENT | WS_EX_LAYERED;
+                return cp;
             }
         }
     }
