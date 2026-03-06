@@ -17,6 +17,7 @@ namespace ArcadeShellSelector
         public bool IsPlaying => _mediaPlayer?.IsPlaying ?? false;
         public bool HasTracks => _tracks.Count > 0;
         public string? LastError { get; private set; }
+        public string? CurrentTrackPath { get; private set; }
 
         private readonly List<string> _tracks;
         private Media? _currentMedia;
@@ -207,6 +208,7 @@ namespace ArcadeShellSelector
                 if (!Path.IsPathRooted(path)) path = Path.Combine(AppContext.BaseDirectory, path);
                 if (!File.Exists(path)) return;
 
+                CurrentTrackPath = path;
                 var media = new Media(_libVlc, path, FromType.FromPath);
                 try { _currentMedia?.Dispose(); } catch { }
                 _currentMedia = media;

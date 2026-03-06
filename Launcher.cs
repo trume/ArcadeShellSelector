@@ -18,6 +18,7 @@ namespace ArcadeShellSelector
     {
         private Controller xinputController;
         private System.Windows.Forms.Timer xinputTimer;
+        private Form? _overlayForm;
         private GamepadButtonFlags lastButtons;
         private readonly AppConfig config;
         private readonly List<(PictureBox Pic, Label Label, string ExePath, string? WaitForProcessName)> optionUis = new();
@@ -33,9 +34,13 @@ namespace ArcadeShellSelector
         // --- end new fields ---
         private MusicPlayer? musicPlayer;
         private VideoBackground? videoBackground;
+        private SpectrumAnalyzer? spectrumAnalyzer;
+        private SpectrumPanel? spectrumPanel;
+        private Form? _spectrumForm;
         private Button closeButton = null!;
         private Label titleLabel = null!;
         private Label AutorApp = null!;
+        private PictureBox? autorIcon;
         private PictureBox? selectedPic;
         private bool _childRunning;
         private CancellationTokenSource? _musicDiagCts;
@@ -139,25 +144,58 @@ namespace ArcadeShellSelector
             KeyDown += MainForm_KeyDown;
             Load += MainForm_Load;
             Resize += MainForm_Resize;
+            Move += (_, __) => SyncOverlayBounds();
         }
 
         private void InitializeControls()
         {
             // Initialize video background (resilient - exposes diagnostics)
-            // We don't add the view to Controls yet — add it after the rest
-            // of the UI so the video view reliably ends up behind other controls.
             videoBackground = new VideoBackground();
 
-            // no background status label
+            // Add the video surface first so overlays can be layered above it.
+            try
+            {
+                var vbView = videoBackground.View;
+                vbView.Dock = DockStyle.Fill;
+                vbView.Visible = true;
+                Controls.Add(vbView);
+                try { vbView.SendToBack(); } catch { }
+            }
+            catch { }
+
+            // Create a transparent overlay form for all UI controls.
+            // WinForms Color.Transparent only paints the parent's BackColor (dark gray),
+            // so we use a separate form with TransparencyKey to achieve true transparency
+            // over the LibVLC video surface.
+            _overlayForm = new Form
+            {
+                FormBorderStyle = FormBorderStyle.None,
+                BackColor = Color.Magenta,
+                TransparencyKey = Color.Magenta,
+                ShowInTaskbar = false,
+                StartPosition = FormStartPosition.Manual,
+                KeyPreview = true,
+            };
+            // Route keyboard from overlay to the main form's handler,
+            // but call Close() on the *main* form, not the overlay.
+            _overlayForm.KeyDown += (s, e) =>
+            {
+                if (e.KeyCode == Keys.Escape)
+                {
+                    EnsureExplorerRunning();
+                    this.Close();
+                }
+            };
 
             titleLabel = new Label
             {
                 Text = config.Ui.Title,
                 ForeColor = Color.White,
+                BackColor = Color.Transparent,
                 AutoSize = true,
                 Font = new Font("Segoe UI", 24, FontStyle.Bold)
             };
-            Controls.Add(titleLabel);
+            AddOverlayControl(titleLabel);
 
             foreach (var opt in config.Options)
             {
@@ -180,19 +218,33 @@ namespace ArcadeShellSelector
                 optionUis.Add((pic, lbl, resolvedExe, waitName));
 
                 WirePictureBox(pic, resolvedExe, waitName);
-                Controls.Add(pic);
-                Controls.Add(lbl);
+                AddOverlayControl(pic);
+                AddOverlayControl(lbl);
             }
 
             AutorApp = new Label
             {
                 Text = config.Autor.Quien.ToString(),
                 ForeColor = Color.White,
-                BackColor = Color.Black,
+                BackColor = Color.Transparent,
                 AutoSize = false,              
                 Font = new Font("Segoe UI", 12, FontStyle.Regular)
             };
-            Controls.Add(AutorApp);
+            AddOverlayControl(AutorApp);
+
+            // App icon next to author
+            var icoPath = Path.Combine(AppContext.BaseDirectory, "app.ico");
+            if (File.Exists(icoPath))
+            {
+                autorIcon = new PictureBox
+                {
+                    SizeMode = PictureBoxSizeMode.Zoom,
+                    BackColor = Color.Transparent,
+                    BorderStyle = BorderStyle.None,
+                };
+                try { autorIcon.Image = new Icon(icoPath).ToBitmap(); } catch { }
+                AddOverlayControl(autorIcon);
+            }
 
             closeButton = new Button
             {
@@ -200,29 +252,62 @@ namespace ArcadeShellSelector
                 Width = 140,
                 Height = 44,
                 Font = new Font("Segoe UI", 12F, FontStyle.Regular),
-                BackColor = Color.FromArgb(50, 50, 50),
+                BackColor = Color.Transparent,
                 ForeColor = Color.White,
+                UseVisualStyleBackColor = false,
                 FlatStyle = FlatStyle.Flat
             };
             closeButton.FlatAppearance.BorderColor = Color.Gray;
             closeButton.FlatAppearance.BorderSize = 1;
             closeButton.Click += CloseButton_Click;
-            Controls.Add(closeButton);
+            AddOverlayControl(closeButton);
 
-            // Now add the video view behind the rest of the UI so it won't occlude
-            // WinForms controls (some video renderers can appear above GDI controls).
-            try
+            // Spectrum analyzer — WASAPI loopback, no LibVLC interference
+            spectrumAnalyzer = new SpectrumAnalyzer();
+            spectrumPanel = new SpectrumPanel(spectrumAnalyzer)
             {
-                if (videoBackground != null)
-                {
-                    var vbView = videoBackground.View;
-                    vbView.Dock = DockStyle.Fill;
-                    vbView.Visible = true;
-                    Controls.Add(vbView);
-                    try { vbView.SendToBack(); } catch { }
-                }
-            }
-            catch { }
+                Size = new Size(220, 60),
+                Dock = DockStyle.Fill,
+            };
+
+            // Dedicated form for spectrum: transparent background, bars only
+            _spectrumForm = new Form
+            {
+                FormBorderStyle = FormBorderStyle.None,
+                BackColor = Color.Magenta,
+                TransparencyKey = Color.Magenta,
+                ShowInTaskbar = false,
+                StartPosition = FormStartPosition.Manual,
+                Size = new Size(220, 60),
+                Opacity = 0.35,
+            };
+            _spectrumForm.Controls.Add(spectrumPanel);
+
+        }
+
+        private void AddOverlayControl(Control control)
+        {
+            if (control == null) return;
+            if (_overlayForm != null)
+                _overlayForm.Controls.Add(control);
+            else
+                Controls.Add(control);
+        }
+
+        private void SyncOverlayBounds()
+        {
+            if (_overlayForm == null) return;
+            _overlayForm.Bounds = this.Bounds;
+        }
+
+        private void SyncSpectrumFormBounds()
+        {
+            if (_spectrumForm == null) return;
+            int sw = _spectrumForm.Width;
+            int sh = _spectrumForm.Height;
+            int cx = this.Left + (this.Width - sw) / 2;
+            int cy = this.Top + (this.Height - sh) / 2;
+            _spectrumForm.Location = new Point(cx, cy);
         }
 
         private void WirePictureBox(PictureBox pb, string exePath, string? waitForProcessName)
@@ -292,6 +377,7 @@ namespace ArcadeShellSelector
             {
                 Text = text,
                 ForeColor = Color.White,
+                BackColor = Color.Transparent,
                 AutoSize = true,
                 Font = new Font("Segoe UI", 14F, FontStyle.Regular),
                 TextAlign = ContentAlignment.MiddleCenter
@@ -301,8 +387,30 @@ namespace ArcadeShellSelector
         private void MainForm_Load(object? sender, EventArgs e)
         {
             LayoutControls();
+
+            // Show the transparent overlay form on top of the video surface.
+            if (_overlayForm != null)
+            {
+                SyncOverlayBounds();
+                _overlayForm.Show(this); // Owner = this: overlay stays on top, auto-hides on minimize
+            }
+
+            if (_spectrumForm != null)
+            {
+                SyncSpectrumFormBounds();
+                _spectrumForm.Show(this); // Owner = this: auto-close/minimize with main form
+            }
+
             TryStartBackground();
             try { musicPlayer?.Start(); } catch { }
+
+            // Start spectrum analyzer after music
+            try
+            {
+                spectrumAnalyzer?.Start();
+                spectrumPanel?.StartRefresh();
+            }
+            catch { }
 
             // If music fails to start, show a one-time diagnostic so the user knows why.
             try
@@ -371,7 +479,36 @@ namespace ArcadeShellSelector
                 h - closeButton.Height - 40
             );
 
-            // no background status label
+            // Place author label right under the Exit button.
+            int autorWidth = Math.Max(180, closeButton.Width + 60);
+            int autorHeight = Math.Max(24, AutorApp.Font.Height + 8);
+            int iconSize = autorHeight;
+            int iconGap = 4;
+
+            if (autorIcon != null)
+            {
+                autorIcon.Size = new Size(iconSize, iconSize);
+                int totalW = iconSize + iconGap + autorWidth;
+                int startX = closeButton.Left + (closeButton.Width - totalW) / 2;
+                int topY = closeButton.Bottom + 8;
+
+                autorIcon.Location = new Point(startX, topY);
+                AutorApp.Size = new Size(autorWidth, autorHeight);
+                AutorApp.TextAlign = ContentAlignment.MiddleLeft;
+                AutorApp.Location = new Point(startX + iconSize + iconGap, topY);
+            }
+            else
+            {
+                AutorApp.Size = new Size(autorWidth, autorHeight);
+                AutorApp.TextAlign = ContentAlignment.TopCenter;
+                AutorApp.Location = new Point(
+                    closeButton.Left + (closeButton.Width - AutorApp.Width) / 2,
+                    closeButton.Bottom + 8
+                );
+            }
+
+            SyncOverlayBounds();
+            SyncSpectrumFormBounds();
         }
 
         private void PicHoverEnter(object? sender, EventArgs e)
@@ -387,6 +524,10 @@ namespace ArcadeShellSelector
         }
 
         private const int SW_SHOWMAXIMIZED = 3;
+        private static readonly IntPtr HWND_BOTTOM = new IntPtr(1);
+        private const uint SWP_NOSIZE = 0x0001;
+        private const uint SWP_NOMOVE = 0x0002;
+        private const uint SWP_NOACTIVATE = 0x0010;
 
         [DllImport("user32.dll")]
         private static extern bool SetForegroundWindow(IntPtr hWnd);
@@ -405,6 +546,16 @@ namespace ArcadeShellSelector
 
         [DllImport("user32.dll")]
         private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+
+        [DllImport("user32.dll")]
+        private static extern bool SetWindowPos(
+            IntPtr hWnd,
+            IntPtr hWndInsertAfter,
+            int X,
+            int Y,
+            int cx,
+            int cy,
+            uint uFlags);
 
         private void LogLaunch(string msg) => DebugLogger.Log("LAUNCH", msg);
 
@@ -474,6 +625,10 @@ namespace ArcadeShellSelector
             // stop music while child runs (resume later)
             try { musicPlayer?.Stop(); } catch { }
 
+            // stop spectrum
+            try { spectrumPanel?.StopRefresh(); } catch { }
+            try { spectrumAnalyzer?.Stop(); } catch { }
+
             // pause video background
             try { videoBackground?.Pause(); } catch { }
 
@@ -504,6 +659,10 @@ namespace ArcadeShellSelector
 
                 // restart music if available
                 try { musicPlayer?.Resume(); } catch { }
+
+                // restart spectrum
+                try { spectrumAnalyzer?.Start(); } catch { }
+                try { spectrumPanel?.StartRefresh(); } catch { }
 
                 foreach (var (pic, _, _, _) in optionUis)
                     pic.Enabled = true;
@@ -772,8 +931,16 @@ namespace ArcadeShellSelector
             // stop and dispose XInput timer
             xinputTimer?.Stop();
             xinputTimer?.Dispose();
-            
+
+            // Owned forms are auto-closed by WinForms; no need to close overlay manually.
+
             try { musicPlayer?.Dispose(); } catch { }
+            try { spectrumPanel?.StopRefresh(); } catch { }
+            try { spectrumAnalyzer?.Dispose(); } catch { }
+            // _spectrumForm is owned, so WinForms auto-closes it.
+
+            // Stop video synchronously before dispose to avoid blocking the UI thread.
+            try { videoBackground?.Stop(); } catch { }
             try { videoBackground?.Dispose(); } catch { }
             base.OnFormClosed(e);
         }
@@ -816,6 +983,8 @@ namespace ArcadeShellSelector
                 TopMost = config.Ui.TopMost;
                 BringToFront();
                 Activate();
+
+                SyncOverlayBounds();
             }
             catch { }
         }

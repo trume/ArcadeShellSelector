@@ -91,8 +91,17 @@ namespace ArcadeShellSelector
                 try { if (View != null) { View.CreateControl(); View.Visible = true; } } catch { }
 
                 var started = false;
-                try { started = _player.Play(); } catch (Exception ex) { LastError = ex.Message; try { LogVideoDebug("Play exception: " + ex.Message); } catch { } }
-                try { LogVideoDebug($"PlayLoop path={path} started={started} isPlaying={_player.IsPlaying} state={_player.State}"); } catch { }
+                try { started = _player.Play(); 
+                    if (started)
+                        {
+                            _player.SetRate(1.15f);
+                        }
+                }
+                catch (Exception ex) { LastError = ex.Message; 
+                try { LogVideoDebug("Play exception: " + ex.Message); } 
+                catch { } }
+                try { LogVideoDebug($"PlayLoop path={path} started={started} isPlaying={_player.IsPlaying} state={_player.State}"); } 
+                catch { }
             }
             catch
             {
