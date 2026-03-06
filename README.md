@@ -20,4 +20,3 @@ Configurator (Editor de configuración)
   Miniaturas en la tabla: la columna de imagen muestra un preview de 48×48 en vez de texto plano.
   Detección de cambios: el botón "Guardar" solo se activa cuando hay cambios sin guardar.
   Guardado multi-destino: escribe config.json en todas las ubicaciones encontradas (fuente + carpetas de salida del build) para que los cambios se apliquen sin recompilar.
-
