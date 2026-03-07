@@ -27,6 +27,9 @@ namespace ArcadeShellSelector
         [JsonPropertyName("Depuracion")]
         public DebugConfig Activa { get; set; } = new();
 
+        [JsonPropertyName("input")]
+        public InputConfig Input { get; set; } = new();
+
         public static (AppConfig? cfg, string? err) TryLoadFromFile(string path)
         {
             try
@@ -125,6 +128,29 @@ namespace ArcadeShellSelector
         // matches your JSON naming "Activa"
         [JsonPropertyName("Activa")]
         public bool Activa { get; set; } = false;
+    }
+
+    public sealed class InputConfig
+    {
+        /// <summary>Enable DirectInput polling (for arcade encoders, Xin-Mo, etc.)</summary>
+        [JsonPropertyName("dinputEnabled")]
+        public bool DInputEnabled { get; set; } = true;
+
+        /// <summary>1-based button number for "select / confirm". Default = 1.</summary>
+        [JsonPropertyName("dinputButtonSelect")]
+        public int DInputButtonSelect { get; set; } = 1;
+
+        /// <summary>1-based button number for "back / close". Default = 2.</summary>
+        [JsonPropertyName("dinputButtonBack")]
+        public int DInputButtonBack { get; set; } = 2;
+
+        /// <summary>1-based button number for "move left". 0 = use joystick axis / POV hat.</summary>
+        [JsonPropertyName("dinputButtonLeft")]
+        public int DInputButtonLeft { get; set; } = 0;
+
+        /// <summary>1-based button number for "move right". 0 = use joystick axis / POV hat.</summary>
+        [JsonPropertyName("dinputButtonRight")]
+        public int DInputButtonRight { get; set; } = 0;
     }
 }
 

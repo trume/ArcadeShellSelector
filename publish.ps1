@@ -23,7 +23,9 @@
     Remove *.pdb debug symbol files from the deploy folder before zipping.
 
 .PARAMETER Version
-    Version string embedded in the ZIP filename (default: today date).
+    Version string embedded in the ZIP filename.
+    Defaults to the <Version> value in ArcadeShellSelector.csproj + short git commit hash.
+    Override with e.g. -Version "1.2.0" to force a specific string.
 
 .EXAMPLE
     .\publish.ps1
@@ -37,17 +39,37 @@ param(
     [switch] $SelfContained,
     [switch] $SkipBuild,
     [switch] $StripPdb,
-    [string] $Version = (Get-Date -Format "yyyy-MM-dd")
+    [string] $Version = ""
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $root       = $PSScriptRoot
-$deployDir  = Join-Path $root "deploy\ArcadeShell"
 $mainCsproj = Join-Path $root "ArcadeShellSelector.csproj"
 $cfgCsproj  = Join-Path $root "ArcadeShellConfigurator\ArcadeShellConfigurator.csproj"
 $buildOut   = Join-Path $root "bin\Release\net10.0-windows"
+
+# --- Resolve version ---
+if ([string]::IsNullOrWhiteSpace($Version)) {
+    # Read <Version> from csproj
+    [xml]$csprojXml = Get-Content $mainCsproj
+    $csprojVersion = $csprojXml.Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
+    if ([string]::IsNullOrWhiteSpace($csprojVersion)) { $csprojVersion = "0.0.0" }
+
+    # Append short git commit hash if inside a git repo
+    $gitHash = ""
+    try {
+        $gitHash = (git -C $root rev-parse --short HEAD 2>$null)
+        if ($LASTEXITCODE -ne 0) { $gitHash = "" }
+    } catch { $gitHash = "" }
+
+    $Version = if ($gitHash) { "$csprojVersion+$gitHash" } else { $csprojVersion }
+}
+
+Write-Host "Version : $Version" -ForegroundColor Cyan
+
+$deployDir  = Join-Path $root "deploy\ArcadeShell"
 $zipName    = "ArcadeShell-v$Version-win-x64.zip"
 $zipPath    = Join-Path $root "deploy\$zipName"
 

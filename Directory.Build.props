@@ -1,0 +1,13 @@
+<Project>
+  <!--
+    Shared build properties for all projects in this solution.
+    Version is defined once in ArcadeShellSelector.csproj and referenced here
+    so the configurator picks it up automatically.
+    To bump the version, edit <Version> in ArcadeShellSelector.csproj only.
+  -->
+  <PropertyGroup>
+    <Company>Trume76</Company>
+    <Product>ArcadeShellSelector</Product>
+    <Copyright>© 2026 Trume76</Copyright>
+  </PropertyGroup>
+</Project>

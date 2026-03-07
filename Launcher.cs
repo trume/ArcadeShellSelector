@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using LibVLCSharp.Shared;
+using SharpDX.DirectInput;
 using SharpDX.XInput;
 
 namespace ArcadeShellSelector
@@ -21,6 +22,13 @@ namespace ArcadeShellSelector
         private System.Windows.Forms.Timer xinputTimer;
         private Form? _overlayForm;
         private GamepadButtonFlags lastButtons;
+
+        // DirectInput (arcade encoders: Xin-Mo, I-PAC, Zero Delay, etc.)
+        private DirectInput? _directInput;
+        private Joystick? _dinputJoystick;
+        private System.Windows.Forms.Timer? _dinputTimer;
+        private bool[] _lastDInputButtons = Array.Empty<bool>();
+        private DateTime _dinputAxisLastMove = DateTime.MinValue;
         private readonly AppConfig config;
         private readonly List<(PictureBox Pic, Label Label, string ExePath, string? WaitForProcessName)> optionUis = new();
         private readonly Dictionary<PictureBox, Rectangle> _originalBounds = new();
@@ -87,6 +95,7 @@ namespace ArcadeShellSelector
             xinputTimer.Tick += XinputTimer_Tick;
             xinputTimer.Start();
 
+            InitDirectInput();
         }
 
         private void XinputTimer_Tick(object? sender, EventArgs e)
@@ -115,6 +124,106 @@ namespace ArcadeShellSelector
                 Close();
 
             lastButtons = buttons;
+        }
+
+        private void InitDirectInput()
+        {
+            if (!config.Input.DInputEnabled) return;
+            try
+            {
+                _directInput = new DirectInput();
+                // Enumerate attached gamepads and joysticks; skip XInput devices
+                var devices = _directInput
+                    .GetDevices(SharpDX.DirectInput.DeviceType.Gamepad, DeviceEnumerationFlags.AttachedOnly)
+                    .Concat(_directInput.GetDevices(SharpDX.DirectInput.DeviceType.Joystick, DeviceEnumerationFlags.AttachedOnly))
+                    .Where(di => !di.ProductName.Contains("XINPUT", StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                if (devices.Count == 0)
+                {
+                    DebugLogger.Log("DInput", "No non-XInput joystick/gamepad found.");
+                    return;
+                }
+
+                DebugLogger.Log("DInput", $"Acquiring: {devices[0].ProductName}");
+                var joystick = new Joystick(_directInput, devices[0].InstanceGuid);
+                joystick.SetCooperativeLevel(Handle, CooperativeLevel.Background | CooperativeLevel.NonExclusive);
+                joystick.Acquire();
+                _dinputJoystick = joystick;
+
+                _dinputTimer = new System.Windows.Forms.Timer { Interval = 100 };
+                _dinputTimer.Tick += DinputTimer_Tick;
+                _dinputTimer.Start();
+                DebugLogger.Log("DInput", "Timer started.");
+            }
+            catch (Exception ex)
+            {
+                DebugLogger.Log("DInput", $"Init failed: {ex.Message}");
+            }
+        }
+
+        private void DinputTimer_Tick(object? sender, EventArgs e)
+        {
+            if (_dinputJoystick == null) return;
+            try
+            {
+                _dinputJoystick.Poll();
+                var state = _dinputJoystick.GetCurrentState();
+                var buttons = state.Buttons;
+
+                if (_lastDInputButtons.Length != buttons.Length)
+                    _lastDInputButtons = new bool[buttons.Length];
+
+                var cfg = config.Input;
+                int selectIdx = cfg.DInputButtonSelect - 1;
+                int backIdx   = cfg.DInputButtonBack   - 1;
+                int leftIdx   = cfg.DInputButtonLeft   - 1; // -1 when DInputButtonLeft = 0
+                int rightIdx  = cfg.DInputButtonRight  - 1;
+
+                // Button-based left/right (only when explicitly configured, i.e. > 0)
+                if (leftIdx >= 0 && leftIdx < buttons.Length && buttons[leftIdx] && !_lastDInputButtons[leftIdx])
+                    MoveSelection(-1);
+                if (rightIdx >= 0 && rightIdx < buttons.Length && buttons[rightIdx] && !_lastDInputButtons[rightIdx])
+                    MoveSelection(1);
+
+                // Axis / POV hat navigation with 300 ms cooldown (always active)
+                bool canMove = (DateTime.UtcNow - _dinputAxisLastMove).TotalMilliseconds > 300;
+                if (canMove && leftIdx < 0 && rightIdx < 0) // skip if buttons cover left/right
+                {
+                    const int deadzone = 16384; // ~50 % of ±32767
+                    if (state.X < -deadzone)
+                    { MoveSelection(-1); _dinputAxisLastMove = DateTime.UtcNow; }
+                    else if (state.X > deadzone)
+                    { MoveSelection(1); _dinputAxisLastMove = DateTime.UtcNow; }
+                    else
+                    {
+                        // POV / hat switch (value in 1/100 degrees; -1 = centred)
+                        var pov = state.PointOfViewControllers;
+                        if (pov != null && pov.Length > 0 && pov[0] != -1)
+                        {
+                            if (pov[0] > 22500 && pov[0] < 31500)      // ~270° = left
+                            { MoveSelection(-1); _dinputAxisLastMove = DateTime.UtcNow; }
+                            else if (pov[0] > 4500 && pov[0] < 13500)  // ~90°  = right
+                            { MoveSelection(1); _dinputAxisLastMove = DateTime.UtcNow; }
+                        }
+                    }
+                }
+
+                // Select / confirm
+                if (selectIdx >= 0 && selectIdx < buttons.Length && buttons[selectIdx] && !_lastDInputButtons[selectIdx])
+                    SelectCurrentOption();
+
+                // Back / close
+                if (backIdx >= 0 && backIdx < buttons.Length && buttons[backIdx] && !_lastDInputButtons[backIdx])
+                    Close();
+
+                Array.Copy(buttons, _lastDInputButtons, buttons.Length);
+            }
+            catch (SharpDX.SharpDXException)
+            {
+                // Device lost — try to re-acquire next tick
+                try { _dinputJoystick?.Acquire(); } catch { }
+            }
         }
 
         private void MoveSelection(int direction)
@@ -582,6 +691,7 @@ namespace ArcadeShellSelector
 
             // stop XInput polling so child app gets exclusive gamepad
             try { xinputTimer?.Stop(); } catch { }
+            try { _dinputTimer?.Stop(); } catch { }
 
             // stop spectrum (lightweight, safe on UI thread)
             try { spectrumPanel?.StopRefresh(); } catch { }
@@ -650,6 +760,7 @@ namespace ArcadeShellSelector
 
             // resume XInput polling
             try { xinputTimer?.Start(); } catch { }
+            try { _dinputTimer?.Start(); } catch { }
 
             _childRunning = false;
 
@@ -1025,6 +1136,12 @@ namespace ArcadeShellSelector
             _zOrderTimer?.Dispose();
             xinputTimer?.Stop();
             xinputTimer?.Dispose();
+
+            _dinputTimer?.Stop();
+            _dinputTimer?.Dispose();
+            try { _dinputJoystick?.Unacquire(); } catch { }
+            _dinputJoystick?.Dispose();
+            _directInput?.Dispose();
 
             // Owned forms are auto-closed by WinForms; no need to close overlay manually.
 

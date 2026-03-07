@@ -38,6 +38,13 @@ namespace ArcadeShellConfigurator
         // Options tab
         private DataGridView gridOptions = null!;
 
+        // Input tab
+        private CheckBox chkDInputEnabled = null!;
+        private NumericUpDown numDInputButtonSelect = null!;
+        private NumericUpDown numDInputButtonBack = null!;
+        private NumericUpDown numDInputButtonLeft = null!;
+        private NumericUpDown numDInputButtonRight = null!;
+
         // Bottom panel
         private bool _suppressDirty;
 
@@ -119,7 +126,7 @@ namespace ArcadeShellConfigurator
             var lblImagesRoot = new Label { Text = "Images Root:", Location = new Point(16, 65), AutoSize = true };
             txtImagesRoot = new TextBox { Location = new Point(140, 62), Width = 370 };
             var btnImagesRoot = new Button { Text = "...", Location = new Point(516, 61), Width = 30, Height = 23 };
-            btnImagesRoot.Click += (_, _) => BrowseFolderUnder(txtImagesRoot, txtToolsRoot.Text);
+            btnImagesRoot.Click += (_, _) => BrowseFolderUnder(txtImagesRoot, txtToolsRoot.Text, _configPath);
             var lblImagesHint = new Label
             {
                 Text = "Relative path inside Tools Root where artwork is stored",
@@ -167,7 +174,7 @@ namespace ArcadeShellConfigurator
             var lblMusicRoot = new Label { Text = "Music Folder:", Location = new Point(16, 55), AutoSize = true };
             txtMusicRoot = new TextBox { Location = new Point(140, 52), Width = 370 };
             var btnMusicRoot = new Button { Text = "...", Location = new Point(516, 51), Width = 30, Height = 23 };
-            btnMusicRoot.Click += (_, _) => BrowseFolder(txtMusicRoot);
+            btnMusicRoot.Click += (_, _) => BrowseFolder(txtMusicRoot, _configPath);
 
             var lblVolume = new Label { Text = "Volume:", Location = new Point(16, 93), AutoSize = true };
             trkVolume = new TrackBar
@@ -256,7 +263,41 @@ namespace ArcadeShellConfigurator
 
             tabOptions.Controls.AddRange(new Control[] { gridOptions });
 
-            tabs.TabPages.AddRange(new[] { tabGeneral, tabPaths, tabMusic, tabOptions });
+            // === Input tab ===
+            var tabInput = new TabPage("Control");
+            chkDInputEnabled = new CheckBox { Text = "DirectInput habilitado", Location = new Point(16, 20), AutoSize = true };
+
+            var lblSelect = new Label { Text = "Botón Seleccionar (base 1):", Location = new Point(16, 58), AutoSize = true };
+            numDInputButtonSelect = new NumericUpDown { Location = new Point(220, 55), Width = 70, Minimum = 1, Maximum = 32, Value = 1 };
+
+            var lblBack = new Label { Text = "Botón Atrás / Cerrar (base 1):", Location = new Point(16, 91), AutoSize = true };
+            numDInputButtonBack = new NumericUpDown { Location = new Point(220, 88), Width = 70, Minimum = 1, Maximum = 32, Value = 2 };
+
+            var lblLeft = new Label { Text = "Botón Izquierda (0 = eje/POV):", Location = new Point(16, 124), AutoSize = true };
+            numDInputButtonLeft = new NumericUpDown { Location = new Point(220, 121), Width = 70, Minimum = 0, Maximum = 32, Value = 0 };
+
+            var lblRight = new Label { Text = "Botón Derecha (0 = eje/POV):", Location = new Point(16, 157), AutoSize = true };
+            numDInputButtonRight = new NumericUpDown { Location = new Point(220, 154), Width = 70, Minimum = 0, Maximum = 32, Value = 0 };
+
+            var lblInputHint = new Label
+            {
+                Text = "0 = navegar con eje analógico / hat POV del joystick.",
+                Location = new Point(16, 193),
+                AutoSize = true,
+                ForeColor = SystemColors.GrayText
+            };
+
+            tabInput.Controls.AddRange(new Control[]
+            {
+                chkDInputEnabled,
+                lblSelect, numDInputButtonSelect,
+                lblBack,   numDInputButtonBack,
+                lblLeft,   numDInputButtonLeft,
+                lblRight,  numDInputButtonRight,
+                lblInputHint
+            });
+
+            tabs.TabPages.AddRange(new[] { tabGeneral, tabPaths, tabMusic, tabInput, tabOptions });
             Controls.Add(tabs);
 
             // Bottom panel
@@ -282,6 +323,11 @@ namespace ArcadeShellConfigurator
             txtMusicRoot.TextChanged += OnChanged;
             trkVolume.ValueChanged += OnChanged;
             txtAudioDevice.TextChanged += OnChanged;
+            chkDInputEnabled.CheckedChanged += OnChanged;
+            numDInputButtonSelect.ValueChanged += OnChanged;
+            numDInputButtonBack.ValueChanged += OnChanged;
+            numDInputButtonLeft.ValueChanged += OnChanged;
+            numDInputButtonRight.ValueChanged += OnChanged;
             gridOptions.CellValueChanged += (s, a) => { if (!_suppressDirty) AutoSave(); };
             gridOptions.RowsAdded += (s, a) => { if (!_suppressDirty) AutoSave(); };
             gridOptions.RowsRemoved += (s, a) => { if (!_suppressDirty) AutoSave(); };
@@ -331,6 +377,13 @@ namespace ArcadeShellConfigurator
             lblVolumeValue.Text = trkVolume.Value.ToString();
             txtAudioDevice.Text = _config.Music.AudioDevice ?? "";
 
+            // Input
+            chkDInputEnabled.Checked = _config.Input.DInputEnabled;
+            numDInputButtonSelect.Value = Math.Clamp(_config.Input.DInputButtonSelect, 1, 32);
+            numDInputButtonBack.Value   = Math.Clamp(_config.Input.DInputButtonBack,   1, 32);
+            numDInputButtonLeft.Value   = Math.Clamp(_config.Input.DInputButtonLeft,   0, 32);
+            numDInputButtonRight.Value  = Math.Clamp(_config.Input.DInputButtonRight,  0, 32);
+
             // Options
             gridOptions.Rows.Clear();
             foreach (var opt in _config.Options)
@@ -357,6 +410,12 @@ namespace ArcadeShellConfigurator
             _config.Music.MusicRoot = txtMusicRoot.Text;
             _config.Music.Volume = trkVolume.Value;
             _config.Music.AudioDevice = string.IsNullOrWhiteSpace(txtAudioDevice.Text) ? null : txtAudioDevice.Text;
+
+            _config.Input.DInputEnabled      = chkDInputEnabled.Checked;
+            _config.Input.DInputButtonSelect = (int)numDInputButtonSelect.Value;
+            _config.Input.DInputButtonBack   = (int)numDInputButtonBack.Value;
+            _config.Input.DInputButtonLeft   = (int)numDInputButtonLeft.Value;
+            _config.Input.DInputButtonRight  = (int)numDInputButtonRight.Value;
 
             _config.Options.Clear();
             foreach (DataGridViewRow row in gridOptions.Rows)
@@ -439,11 +498,18 @@ namespace ArcadeShellConfigurator
             Close();
         }
 
-        private static void BrowseFolder(TextBox target)
+        private static void BrowseFolder(TextBox target, string configPath)
         {
             using var dlg = new FolderBrowserDialog();
-            if (Directory.Exists(target.Text))
-                dlg.SelectedPath = target.Text;
+            var path = target.Text.Trim();
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                if (!Path.IsPathRooted(path))
+                    path = Path.GetFullPath(Path.Combine(
+                        Path.GetDirectoryName(configPath) ?? ".", path));
+                if (Directory.Exists(path))
+                    dlg.SelectedPath = path;
+            }
             if (dlg.ShowDialog() == DialogResult.OK)
                 target.Text = dlg.SelectedPath;
         }
@@ -477,12 +543,20 @@ namespace ArcadeShellConfigurator
                 target.Text = dlg.SelectedPath;
         }
 
-        private static void BrowseFolderUnder(TextBox target, string baseDir)
+        private static void BrowseFolderUnder(TextBox target, string baseDir, string configPath)
         {
             using var dlg = new FolderBrowserDialog();
-            if (Directory.Exists(target.Text))
-                dlg.SelectedPath = target.Text;
-            else if (Directory.Exists(baseDir))
+            var targetPath = target.Text.Trim();
+            if (!string.IsNullOrWhiteSpace(targetPath))
+            {
+                // Resolve relative paths against the solution root (where config.json lives)
+                if (!Path.IsPathRooted(targetPath))
+                    targetPath = Path.GetFullPath(Path.Combine(
+                        Path.GetDirectoryName(configPath) ?? ".", targetPath));
+                if (Directory.Exists(targetPath))
+                    dlg.SelectedPath = targetPath;
+            }
+            if (string.IsNullOrEmpty(dlg.SelectedPath) && Directory.Exists(baseDir))
                 dlg.SelectedPath = baseDir;
             if (dlg.ShowDialog() == DialogResult.OK)
                 target.Text = dlg.SelectedPath;

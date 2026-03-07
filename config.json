@@ -8,7 +8,7 @@
   },
   "paths": {
     "toolsRoot": "F:\\",
-    "imagesRoot": "Media\\Img",
+    "imagesRoot": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Img",
     "networkWaitSeconds": 15,
     "videoBackground": "Media\\Bkg\\Background.mp4"
   },
@@ -17,13 +17,13 @@
       "label": "HyperSpin 12tb",
       "exe": "Player 3 MAX\\Player 3 MAX\\Player 3 MAX.exe",
       "image": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Img\\shell1.png",
-      "thumbVideo": "C:\\Users\\trume76\\Downloads\\takeout-20250804T091817Z-2-001\\Takeout\\Google Photos\\Photos from 2020\\VID-20200130-WA0002.mp4"
+      "thumbVideo": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Video\\ARAKNE ELITE BK EXPLOSION.mp4"
     },
     {
       "label": "CoinOps Arcade Next",
       "exe": "I:\\Emu\\Emulators\\Demul\\demul.exe",
       "image": "G:\\CoinOPS Collections\\CoinOPS Collections\\CoinOPS Collections.jpg",
-      "thumbVideo": "C:\\Users\\trume76\\Downloads\\WhatsApp Video 2024-09-17 at 00.12.21.mp4"
+      "thumbVideo": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Video\\ARAKNE ELITE BK EXPLOSION.mp4"
     },
     {
       "label": "CoinOps Legens",
@@ -40,7 +40,7 @@
   ],
   "music": {
     "enabled": true,
-    "musicRoot": "Media\\Music",
+    "musicRoot": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Music",
     "files": [],
     "volume": 100,
     "audioDevice": "MX27UC (NVIDIA High Definition Audio)"

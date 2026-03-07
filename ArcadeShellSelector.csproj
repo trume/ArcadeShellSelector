@@ -9,6 +9,11 @@
     <ApplicationIcon>app.ico</ApplicationIcon>
     <Platforms>AnyCPU;x64</Platforms>
     <DefaultItemExcludes>$(DefaultItemExcludes);ArcadeShellConfigurator\**</DefaultItemExcludes>
+    <!-- Version: bump Major.Minor.Patch manually; Build auto-set by publish.ps1 via /p:BuildNumber -->
+    <Version>0.97.0</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+    <InformationalVersion>0.97.0</InformationalVersion>
   </PropertyGroup>
 
   <ItemGroup>
@@ -27,6 +32,7 @@
     <PackageReference Include="LibVLCSharp" Version="3.9.6" />
     <PackageReference Include="LibVLCSharp.WinForms" Version="3.9.6" />
     <PackageReference Include="NAudio" Version="2.2.1" />
+    <PackageReference Include="SharpDX.DirectInput" Version="4.2.0" />
     <PackageReference Include="SharpDX.XInput" Version="4.2.0" />
     <PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.23">
       <ExcludeAssets>runtime</ExcludeAssets>
