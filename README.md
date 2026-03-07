@@ -43,10 +43,6 @@
 ## License: unknown
 https://github.com/manitou48/propctrng/blob/6e0ffcb5f79dc41df9cdb7ba776e98149ffe31bc/propctrng.spin
 
-```
-
-
-I don't have file editing tools enabled to create the files directly. Here's a comprehensive Markdown document you can save — it renders well in VS Code and can be exported to PDF via the "Markdown PDF" extension or any Markdown-to-PDF converter:
 
 ```markdown
 # ArcadeShellSelector — Architecture Documentation
