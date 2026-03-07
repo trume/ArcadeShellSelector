@@ -184,7 +184,7 @@ if (-not (Test-Path $vlcDll)) {
 # --- 5. Strip PDB files ---
 if ($StripPdb) {
     Write-Step "Stripping *.pdb debug symbols"
-    $pdbs = Get-ChildItem $deployDir -Recurse -Filter "*.pdb"
+    $pdbs = @(Get-ChildItem $deployDir -Recurse -Filter "*.pdb")
     foreach ($pdb in $pdbs) { Remove-Item $pdb.FullName -Force }
     Write-Host "  Removed $($pdbs.Count) PDB file(s)."
 }

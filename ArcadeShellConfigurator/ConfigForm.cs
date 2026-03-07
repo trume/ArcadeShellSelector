@@ -8,6 +8,8 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Windows.Forms;
 using ArcadeShellSelector;
+using SharpDX.DirectInput;
+using SharpDX.XInput;
 
 namespace ArcadeShellConfigurator
 {
@@ -44,6 +46,25 @@ namespace ArcadeShellConfigurator
         private NumericUpDown numDInputButtonBack = null!;
         private NumericUpDown numDInputButtonLeft = null!;
         private NumericUpDown numDInputButtonRight = null!;
+
+        // Input test panel — DirectInput
+        private ListBox lstDInputDevices = null!;
+        private Button btnTestDInput = null!;
+        private Label lblTestDevice = null!;
+        private Label lblTestButtons = null!;
+        private Label lblTestAxes = null!;
+        private DirectInput? _testDInput;
+        private Joystick? _testJoystick;
+        private System.Windows.Forms.Timer? _testTimer;
+        private readonly List<DeviceInstance> _dinputDeviceList = new();
+
+        // Input test panel — XInput
+        private ListBox lstXInputSlots = null!;
+        private Button btnTestXInput = null!;
+        private Label lblXInputStatus = null!;
+        private Label lblXInputButtons = null!;
+        private Label lblXInputAxes = null!;
+        private System.Windows.Forms.Timer? _xinputTestTimer;
 
         // Bottom panel
         private bool _suppressDirty;
@@ -82,16 +103,18 @@ namespace ArcadeShellConfigurator
 
             InitializeUI();
             LoadConfig();
+            Shown += (_, _) => { ScanDInputDevices(); ScanXInputSlots(); };
         }
 
         private void InitializeUI()
         {
             Text = "Arcade Shell Configurator";
-            Size = new Size(820, 520);
+            Size = new Size(820, 750);
+            MinimumSize = new Size(820, 600);
             StartPosition = FormStartPosition.CenterScreen;
-            FormBorderStyle = FormBorderStyle.FixedDialog;
-            MaximizeBox = false;
-            MinimizeBox = false;
+            FormBorderStyle = FormBorderStyle.Sizable;
+            MaximizeBox = true;
+            MinimizeBox = true;
 
             // Set window icon from the embedded app.ico resource
             var icoPath = Path.Combine(Path.GetDirectoryName(Application.ExecutablePath) ?? ".", "app.ico");
@@ -202,8 +225,7 @@ namespace ArcadeShellConfigurator
             var tabOptions = new TabPage("Opciones Lanzador");
             gridOptions = new DataGridView
             {
-                Location = new Point(10, 10),
-                Size = new Size(760, 300),
+                Dock = DockStyle.Fill,
                 AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
                 AllowUserToAddRows = true,
                 AllowUserToDeleteRows = true,
@@ -287,6 +309,86 @@ namespace ArcadeShellConfigurator
                 ForeColor = SystemColors.GrayText
             };
 
+            // Test panel — two columns: DirectInput (left) | XInput (right)
+            var grpTest = new GroupBox
+            {
+                Text = "Probar dispositivo",
+                Location = new Point(10, 215),
+                Size = new Size(745, 250),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom
+            };
+
+            // --- DirectInput column ---
+            var grpDI = new GroupBox
+            {
+                Text = "DirectInput",
+                Location = new Point(8, 18),
+                Size = new Size(360, 220),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Bottom
+            };
+            lstDInputDevices = new ListBox
+            {
+                Location = new Point(8, 18),
+                Size = new Size(340, 68),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+                SelectionMode = SelectionMode.One,
+                HorizontalScrollbar = true
+            };
+            btnTestDInput  = new Button { Text = "\u25b6 Iniciar", Location = new Point(8, 92), Width = 110, Height = 24 };
+            btnTestDInput.Click += BtnTestDInput_Click;
+            lblTestDevice  = new Label { Text = "Activo: \u2014", Location = new Point(8, 124), AutoSize = true };
+            lblTestButtons = new Label
+            {
+                Text = "Botones: \u2014",
+                Location = new Point(8, 148),
+                AutoSize = true,
+                Font = new Font("Courier New", 9f)
+            };
+            lblTestAxes = new Label
+            {
+                Text = "Eje X: \u2014 | Eje Y: \u2014 | POV: \u2014",
+                Location = new Point(8, 178),
+                AutoSize = true,
+                ForeColor = SystemColors.GrayText
+            };
+            grpDI.Controls.AddRange(new Control[] { lstDInputDevices, btnTestDInput, lblTestDevice, lblTestButtons, lblTestAxes });
+
+            // --- XInput column ---
+            var grpXI = new GroupBox
+            {
+                Text = "XInput (Xbox / compatible)",
+                Location = new Point(378, 18),
+                Size = new Size(360, 220),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom
+            };
+            lstXInputSlots = new ListBox
+            {
+                Location = new Point(8, 18),
+                Size = new Size(340, 68),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+                SelectionMode = SelectionMode.One
+            };
+            btnTestXInput  = new Button { Text = "\u25b6 Iniciar", Location = new Point(8, 92), Width = 110, Height = 24 };
+            btnTestXInput.Click += BtnTestXInput_Click;
+            lblXInputStatus  = new Label { Text = "Activo: \u2014", Location = new Point(8, 124), AutoSize = true };
+            lblXInputButtons = new Label
+            {
+                Text = "Botones: \u2014",
+                Location = new Point(8, 148),
+                AutoSize = true,
+                Font = new Font("Courier New", 9f)
+            };
+            lblXInputAxes = new Label
+            {
+                Text = "LX: \u2014 | LY: \u2014 | LT: \u2014 | RT: \u2014",
+                Location = new Point(8, 178),
+                AutoSize = true,
+                ForeColor = SystemColors.GrayText
+            };
+            grpXI.Controls.AddRange(new Control[] { lstXInputSlots, btnTestXInput, lblXInputStatus, lblXInputButtons, lblXInputAxes });
+
+            grpTest.Controls.AddRange(new Control[] { grpDI, grpXI });
+
             tabInput.Controls.AddRange(new Control[]
             {
                 chkDInputEnabled,
@@ -294,7 +396,8 @@ namespace ArcadeShellConfigurator
                 lblBack,   numDInputButtonBack,
                 lblLeft,   numDInputButtonLeft,
                 lblRight,  numDInputButtonRight,
-                lblInputHint
+                lblInputHint,
+                grpTest
             });
 
             tabs.TabPages.AddRange(new[] { tabGeneral, tabPaths, tabMusic, tabInput, tabOptions });
@@ -646,8 +749,22 @@ namespace ArcadeShellConfigurator
                 }
                 if (dlg.ShowDialog() == DialogResult.OK)
                 {
-                    row.Cells["ImagePath"].Value = dlg.FileName;
-                    row.Cells["ImageThumb"].Value = LoadThumbnail(dlg.FileName);
+                    var srcFile = dlg.FileName;
+                    var solutionDir = Path.GetDirectoryName(_configPath) ?? ".";
+                    var imgDir = Path.Combine(solutionDir, "Media", "Img");
+                    try { Directory.CreateDirectory(imgDir); } catch { }
+
+                    var binImgDir = Path.Combine(solutionDir, "bin", "Release", "net10.0-windows", "Media", "Img");
+                    try { Directory.CreateDirectory(binImgDir); } catch { }
+
+                    var destName  = Path.GetFileName(srcFile);
+                    var destLocal = Path.Combine(imgDir, destName);
+                    var destBin   = Path.Combine(binImgDir, destName);
+                    try { File.Copy(srcFile, destLocal, true); } catch { }
+                    try { File.Copy(srcFile, destBin,   true); } catch { }
+
+                    row.Cells["ImagePath"].Value  = destLocal;
+                    row.Cells["ImageThumb"].Value = LoadThumbnail(destLocal);
                 }
             }
             else if (colName == "BrowseThumbVideo")
@@ -788,6 +905,273 @@ namespace ArcadeShellConfigurator
         private void RefreshVideoThumb()
         {
             picVideoThumb.Image = LoadVideoThumbnail(txtVideoBackground.Text);
+        }
+
+        private void ScanDInputDevices()
+        {
+            _dinputDeviceList.Clear();
+            lstDInputDevices.Items.Clear();
+            lstDInputDevices.Items.Add("Escaneando\u2026");
+
+            Task.Run(() =>
+            {
+                var found = new List<DeviceInstance>();
+                string? error = null;
+                try
+                {
+                    using var di = new DirectInput();
+                    found = di
+                        .GetDevices(SharpDX.DirectInput.DeviceType.Gamepad,  DeviceEnumerationFlags.AttachedOnly)
+                        .Concat(di.GetDevices(SharpDX.DirectInput.DeviceType.Joystick, DeviceEnumerationFlags.AttachedOnly))
+                        .Where(d => !d.ProductName.Contains("XINPUT", StringComparison.OrdinalIgnoreCase))
+                        .GroupBy(d => d.InstanceGuid)
+                        .Select(g => g.First())
+                        .ToList();
+                }
+                catch (Exception ex) { error = ex.Message; }
+
+                BeginInvoke(() =>
+                {
+                    lstDInputDevices.Items.Clear();
+                    _dinputDeviceList.Clear();
+                    if (error != null)
+                    {
+                        lstDInputDevices.Items.Add($"Error: {error}");
+                    }
+                    else if (found.Count == 0)
+                    {
+                        lstDInputDevices.Items.Add("(ningún dispositivo encontrado)");
+                    }
+                    else
+                    {
+                        foreach (var d in found)
+                        {
+                            _dinputDeviceList.Add(d);
+                            var (vid, pid) = ExtractVidPid(d.ProductGuid);
+                            lstDInputDevices.Items.Add($"[VID:{vid:X4} PID:{pid:X4}]  {d.ProductName}");
+                        }
+                        lstDInputDevices.SelectedIndex = 0;
+                    }
+                });
+            });
+        }
+
+        private void ScanXInputSlots()
+        {
+            lstXInputSlots.Items.Clear();
+            lstXInputSlots.Items.Add("Escaneando\u2026");
+
+            Task.Run(() =>
+            {
+                var lines = new List<string>();
+                int firstConnected = -1;
+                for (int i = 0; i < 4; i++)
+                {
+                    var c = new Controller((UserIndex)i);
+                    if (c.IsConnected)
+                    {
+                        var caps = c.GetCapabilities(DeviceQueryType.Any);
+                        bool wireless = caps.Flags.HasFlag(CapabilityFlags.Wireless);
+                        lines.Add($"Slot {i + 1}: {caps.SubType}{(wireless ? " [inal\u00e1mbrico]" : "")}  [conectado]");
+                        if (firstConnected < 0) firstConnected = i;
+                    }
+                    else
+                    {
+                        lines.Add($"Slot {i + 1}: no conectado");
+                    }
+                }
+
+                BeginInvoke(() =>
+                {
+                    lstXInputSlots.Items.Clear();
+                    foreach (var l in lines) lstXInputSlots.Items.Add(l);
+                    if (firstConnected >= 0) lstXInputSlots.SelectedIndex = firstConnected;
+                });
+            });
+        }
+
+        private static (ushort vid, ushort pid) ExtractVidPid(Guid productGuid)
+        {
+            // DirectInput HID ProductGuid: bytes 0-1 = VID, bytes 2-3 = PID (little-endian)
+            var b = productGuid.ToByteArray();
+            return ((ushort)(b[0] | (b[1] << 8)), (ushort)(b[2] | (b[3] << 8)));
+        }
+
+        private void BtnTestDInput_Click(object? sender, EventArgs e)
+        {
+            if (_testTimer != null)
+            {
+                StopDInputTest();
+                btnTestDInput.Text  = "\u25b6 Iniciar";
+                lblTestDevice.Text  = "Activo: \u2014";
+                lblTestButtons.Text = "Botones: \u2014";
+                lblTestAxes.Text    = "Eje X: \u2014 | Eje Y: \u2014 | POV: \u2014";
+                return;
+            }
+
+            // Auto-scan if list is empty
+            if (_dinputDeviceList.Count == 0) ScanDInputDevices();
+            if (_dinputDeviceList.Count == 0)
+            {
+                MessageBox.Show("No se encontr\u00f3 ning\u00fan dispositivo DirectInput (no XInput).",
+                    "Sin dispositivo", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            int sel = lstDInputDevices.SelectedIndex;
+            var deviceInfo = _dinputDeviceList[sel >= 0 && sel < _dinputDeviceList.Count ? sel : 0];
+            try
+            {
+                _testDInput = new DirectInput();
+                _testJoystick = new Joystick(_testDInput, deviceInfo.InstanceGuid);
+                _testJoystick.SetCooperativeLevel(Handle, CooperativeLevel.Background | CooperativeLevel.NonExclusive);
+                _testJoystick.Acquire();
+
+                var (vid, pid) = ExtractVidPid(deviceInfo.ProductGuid);
+                lblTestDevice.Text = $"Activo: {deviceInfo.ProductName}  [VID:{vid:X4} PID:{pid:X4}]";
+
+                _testTimer = new System.Windows.Forms.Timer { Interval = 100 };
+                _testTimer.Tick += TestTimer_Tick;
+                _testTimer.Start();
+                btnTestDInput.Text = "\u25a0 Detener";
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error al iniciar prueba:\n{ex.Message}", "Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                StopDInputTest();
+            }
+        }
+
+        private void TestTimer_Tick(object? sender, EventArgs e)
+        {
+            if (_testJoystick == null) return;
+            try
+            {
+                _testJoystick.Poll();
+                var state = _testJoystick.GetCurrentState();
+
+                var pressed = state.Buttons
+                    .Select((b, i) => (b, i + 1))
+                    .Where(x => x.b)
+                    .Select(x => x.Item2.ToString())
+                    .ToArray();
+                lblTestButtons.Text = pressed.Length > 0
+                    ? $"Botones: [{string.Join("] [", pressed)}]"
+                    : "Botones: \u2014";
+
+                string povText = "\u2014";
+                var pov = state.PointOfViewControllers;
+                if (pov != null && pov.Length > 0 && pov[0] != -1)
+                {
+                    int deg = pov[0] / 100;
+                    povText = deg switch
+                    {
+                        >= 315 or < 45   => "\u2191 Arriba",
+                        >= 45 and < 135  => "\u2192 Derecha",
+                        >= 135 and < 225 => "\u2193 Abajo",
+                        _                => "\u2190 Izquierda"
+                    };
+                }
+                lblTestAxes.Text = $"Eje X: {state.X,7} | Eje Y: {state.Y,7} | POV: {povText}";
+            }
+            catch (SharpDX.SharpDXException)
+            {
+                try { _testJoystick?.Acquire(); } catch { }
+            }
+        }
+
+        private void StopDInputTest()
+        {
+            _testTimer?.Stop();
+            _testTimer?.Dispose();
+            _testTimer = null;
+            try { _testJoystick?.Unacquire(); } catch { }
+            _testJoystick?.Dispose();
+            _testJoystick = null;
+            _testDInput?.Dispose();
+            _testDInput = null;
+        }
+
+        private void BtnTestXInput_Click(object? sender, EventArgs e)
+        {
+            if (_xinputTestTimer != null)
+            {
+                StopXInputTest();
+                btnTestXInput.Text    = "\u25b6 Iniciar";
+                lblXInputStatus.Text  = "Activo: \u2014";
+                lblXInputButtons.Text = "Botones: \u2014";
+                lblXInputAxes.Text    = "LX: \u2014 | LY: \u2014 | LT: \u2014 | RT: \u2014";
+                return;
+            }
+
+            // Auto-scan if list is empty
+            if (lstXInputSlots.Items.Count == 0) ScanXInputSlots();
+
+            // Determine slot from listbox selection
+            Controller? controller = null;
+            int activeSlotIdx = 0;
+            int selIdx = lstXInputSlots.SelectedIndex >= 0 ? lstXInputSlots.SelectedIndex : 0;
+            for (int attempt = 0; attempt < 4; attempt++)
+            {
+                int idx = (selIdx + attempt) % 4;
+                var c = new Controller((UserIndex)idx);
+                if (c.IsConnected) { controller = c; activeSlotIdx = idx; break; }
+            }
+
+            if (controller == null)
+            {
+                MessageBox.Show("No se encontr\u00f3 ning\u00fan mando XInput conectado.",
+                    "Sin dispositivo", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            var caps = controller.GetCapabilities(DeviceQueryType.Any);
+            bool wireless = caps.Flags.HasFlag(CapabilityFlags.Wireless);
+            string deviceDesc = $"{caps.SubType}{(wireless ? " [inal\u00e1mbrico]" : "")}";
+            lblXInputStatus.Text = $"Activo: Slot {activeSlotIdx + 1} — {deviceDesc}";
+
+            _xinputTestTimer = new System.Windows.Forms.Timer { Interval = 100 };
+            _xinputTestTimer.Tick += (_, _) => XInputTestTimer_Tick(controller);
+            _xinputTestTimer.Start();
+            btnTestXInput.Text = "\u25a0 Detener";
+        }
+
+        private void XInputTestTimer_Tick(Controller controller)
+        {
+            if (!controller.IsConnected)
+            {
+                lblXInputStatus.Text  = "Activo: desconectado";
+                lblXInputButtons.Text = "Botones: \u2014";
+                lblXInputAxes.Text    = "LX: \u2014 | LY: \u2014 | LT: \u2014 | RT: \u2014";
+                return;
+            }
+
+            var gp = controller.GetState().Gamepad;
+            var pressed = Enum.GetValues<GamepadButtonFlags>()
+                .Where(f => f != GamepadButtonFlags.None && (gp.Buttons & f) != 0)
+                .Select(f => f.ToString())
+                .ToArray();
+            lblXInputButtons.Text = pressed.Length > 0
+                ? $"Botones: {string.Join(" ", pressed)}"
+                : "Botones: \u2014";
+
+            lblXInputAxes.Text =
+                $"LX: {gp.LeftThumbX,6} | LY: {gp.LeftThumbY,6} | LT: {gp.LeftTrigger,3} | RT: {gp.RightTrigger,3}";
+        }
+
+        private void StopXInputTest()
+        {
+            _xinputTestTimer?.Stop();
+            _xinputTestTimer?.Dispose();
+            _xinputTestTimer = null;
+        }
+
+        protected override void OnFormClosed(FormClosedEventArgs e)
+        {
+            StopDInputTest();
+            StopXInputTest();
+            base.OnFormClosed(e);
         }
 
         // --- Windows Shell thumbnail extraction (works for video, images, etc.) ---

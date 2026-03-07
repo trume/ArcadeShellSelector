@@ -10,32 +10,38 @@
     "toolsRoot": "F:\\",
     "imagesRoot": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Img",
     "networkWaitSeconds": 15,
-    "videoBackground": "Media\\Bkg\\Background.mp4"
+    "videoBackground": "C:\\Users\\trume76\\ArcadeShellSelector\\Bkg\\Background.mp4"
   },
   "options": [
     {
       "label": "HyperSpin 12tb",
       "exe": "Player 3 MAX\\Player 3 MAX\\Player 3 MAX.exe",
       "image": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Img\\shell1.png",
-      "thumbVideo": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Video\\ARAKNE ELITE BK EXPLOSION.mp4"
+      "thumbVideo": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Video\\2 On 2 Open Ice Challenge-01.mp4"
     },
     {
       "label": "CoinOps Arcade Next",
       "exe": "I:\\Emu\\Emulators\\Demul\\demul.exe",
       "image": "G:\\CoinOPS Collections\\CoinOPS Collections\\CoinOPS Collections.jpg",
-      "thumbVideo": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Video\\ARAKNE ELITE BK EXPLOSION.mp4"
+      "thumbVideo": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Video\\Wave Race 64.avi"
     },
     {
       "label": "CoinOps Legens",
       "exe": "I:\\Emu\\Emulators\\Arnold\\arnold.exe",
       "image": "G:\\CoinOPS Collections\\CoinOPS Collections\\Helper.jpg",
-      "thumbVideo": "D:\\Emu\\CoinOPS Next\\collections\\Atari 5200\\medium_artwork\\video\\Gremlins (USA).avi"
+      "thumbVideo": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Video\\3countb.avi"
     },
     {
       "label": "CoinOps Arcades",
       "exe": "I:\\Emu\\Emulators\\Arnold\\arnold.exe",
-      "image": "G:\\CoinOPS Collections\\CoinOPS Collections\\collections\\Game and Watch\\medium_artwork\\logo\\gnw_mario.png",
-      "thumbVideo": "D:\\Emu\\CoinOPS Next\\collections\\Nintendo 64\\medium_artwork\\video\\Mario Kart 64.avi"
+      "image": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Img\\gnw_mario.png",
+      "thumbVideo": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Video\\bloodwar.avi"
+    },
+    {
+      "label": "Nueva Opci\u00F3n",
+      "exe": "F:\\Player 3 MAX\\Player 3 MAX\\Player 3 MAX.exe",
+      "image": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Img\\no-media.png",
+      "thumbVideo": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Video\\Pokonyan! Balloon-01.mp4"
     }
   ],
   "music": {
@@ -50,5 +56,12 @@
   },
   "Depuracion": {
     "Activa": true
+  },
+  "input": {
+    "dinputEnabled": true,
+    "dinputButtonSelect": 1,
+    "dinputButtonBack": 2,
+    "dinputButtonLeft": 0,
+    "dinputButtonRight": 0
   }
 }
