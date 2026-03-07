@@ -7,6 +7,9 @@ obj/
 *.vs/
 .vs/
 
+## Publish output
+deploy/
+
 ## Debug logs
 debug.log
 launch_debug.log

@@ -46,6 +46,7 @@ namespace ArcadeShellSelector
         private bool _childRunning;
         private Task? _resumeTask;
         private CancellationTokenSource? _musicDiagCts;
+        private System.Windows.Forms.Timer? _zOrderTimer;
 
         public Launcher()
         {
@@ -134,6 +135,12 @@ namespace ArcadeShellSelector
                 _ = OnOptionClickedAsync(opt.Pic, opt.ExePath, opt.WaitForProcessName);
         }
 
+        private void EnforceZOrder()
+        {
+            try { _spectrumForm?.SendToBack(); } catch { }
+            try { _overlayForm?.BringToFront(); } catch { }
+        }
+
         private void InitializeForm()
         {
             Text = "ArcadeLauncher";
@@ -146,7 +153,12 @@ namespace ArcadeShellSelector
             KeyDown += MainForm_KeyDown;
             Load += MainForm_Load;
             Resize += MainForm_Resize;
-            Move += (_, __) => SyncOverlayBounds();
+            Move += (_, __) => { SyncOverlayBounds(); EnforceZOrder(); };
+            Activated += (_, __) => EnforceZOrder();
+
+            // Heartbeat: keep the overlay in front no matter what repaints underneath it.
+            _zOrderTimer = new System.Windows.Forms.Timer { Interval = 250 };
+            _zOrderTimer.Tick += (_, __) => EnforceZOrder();
         }
 
         private void InitializeControls()
@@ -177,6 +189,7 @@ namespace ArcadeShellSelector
                 ShowInTaskbar = false,
                 StartPosition = FormStartPosition.Manual,
                 KeyPreview = true,
+                TopMost = config.Ui.TopMost,
             };
             // Route keyboard from overlay to the main form's handler,
             // but call Close() on the *main* form, not the overlay.
@@ -407,7 +420,10 @@ namespace ArcadeShellSelector
             {
                 SyncOverlayBounds();
                 _overlayForm.Show(this);
+                _overlayForm.BringToFront();
             }
+
+            _zOrderTimer?.Start();
 
             TryStartBackground();
             try { musicPlayer?.Start(); } catch { }
@@ -518,6 +534,7 @@ namespace ArcadeShellSelector
 
             SyncOverlayBounds();
             SyncSpectrumFormBounds();
+            EnforceZOrder();
         }
 
         private void PicHoverEnter(object? sender, EventArgs e)
@@ -1003,7 +1020,9 @@ namespace ArcadeShellSelector
             // cancel any pending music diagnostic task
             try { _musicDiagCts?.Cancel(); } catch { }
 
-            // stop and dispose XInput timer
+            // stop and dispose timers
+            _zOrderTimer?.Stop();
+            _zOrderTimer?.Dispose();
             xinputTimer?.Stop();
             xinputTimer?.Dispose();
 
@@ -1035,15 +1054,28 @@ namespace ArcadeShellSelector
         {
             try
             {
-                // Look for a video file in the Bkg folder and play the first recognised video.
-                var bkgDir = Path.Combine(AppContext.BaseDirectory, "Bkg");
+                var exts = new[] { ".mp4", ".mkv", ".avi", ".mov", ".wmv", ".ogg" };
+
+                // 1. Use the explicit videoBackground path from config if set.
+                if (!string.IsNullOrWhiteSpace(config.Paths.VideoBackground))
+                {
+                    var vidPath = config.Paths.VideoBackground;
+                    if (!Path.IsPathRooted(vidPath))
+                        vidPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, vidPath));
+                    if (File.Exists(vidPath))
+                    {
+                        try { videoBackground?.PlayLoop(vidPath); } catch { }
+                        return;
+                    }
+                }
+
+                // 2. Fallback: scan Media\Bkg folder for any recognised video file.
+                var bkgDir = Path.Combine(AppContext.BaseDirectory, "Media", "Bkg");
                 try { if (!Directory.Exists(bkgDir)) Directory.CreateDirectory(bkgDir); } catch { }
 
                 var files = Directory.GetFiles(bkgDir);
-                var exts = new[] { ".mp4", ".mkv", ".avi", ".mov", ".wmv", ".ogg" };
 
-                // If Bkg is empty, also look in the app base directory and copy any
-                // found video into Bkg so the app references videos from Bkg.
+                // If Media\Bkg is empty, look for a video in the app root and copy it in.
                 if (files == null || files.Length == 0)
                 {
                     try
@@ -1065,8 +1097,6 @@ namespace ArcadeShellSelector
                 {
                     try { videoBackground?.PlayLoop(vid); } catch { }
                 }
-
-                // no status label to update
             }
             catch
             {
@@ -1082,17 +1112,22 @@ namespace ArcadeShellSelector
     /// </summary>
     internal sealed class ClickThroughForm : Form
     {
-        private const int WS_EX_TRANSPARENT = 0x20;
-        private const int WS_EX_LAYERED = 0x80000;
+        private const int WM_NCHITTEST = 0x0084;
+        private const int HTTRANSPARENT = -1;
 
-        protected override CreateParams CreateParams
+        // Route all hit-tests to HTTRANSPARENT so mouse events fall through to
+        // whatever window sits below this one in z-order.
+        // Using WM_NCHITTEST instead of WS_EX_TRANSPARENT avoids the side-effect
+        // where WS_EX_TRANSPARENT forces the window to always paint LAST among
+        // siblings (which caused the spectrum to render on top of the overlay).
+        protected override void WndProc(ref Message m)
         {
-            get
+            if (m.Msg == WM_NCHITTEST)
             {
-                var cp = base.CreateParams;
-                cp.ExStyle |= WS_EX_TRANSPARENT | WS_EX_LAYERED;
-                return cp;
+                m.Result = (IntPtr)HTTRANSPARENT;
+                return;
             }
+            base.WndProc(ref m);
         }
     }
 }

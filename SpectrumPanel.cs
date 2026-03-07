@@ -6,7 +6,7 @@ namespace ArcadeShellSelector
 {
     /// <summary>
     /// Owner-drawn panel that renders 6 vertical spectrum bars.
-    /// Refreshes at ~30 FPS via an internal timer.
+    /// Refreshes at ~60 FPS via an internal timer.
     /// </summary>
     internal sealed class SpectrumPanel : Panel
     {

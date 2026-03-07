@@ -18,13 +18,7 @@
     <Content Include="app.ico">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="Music\**\*">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Bkg\**\*">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-     <Content Include="Img\**\*">
+    <Content Include="Media\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
@@ -39,13 +33,49 @@
     </PackageReference>
   </ItemGroup>
 
-  <!-- Move dependency DLLs into lib\ subfolder after build -->
-  <Target Name="MoveDllsToLib" AfterTargets="Build">
+  <!-- Move dependency DLLs into lib\ subfolder after regular build (dev workflow) -->
+  <!-- During dotnet publish the build step still fires, but publish collects files from
+       NuGet packages independently, so the publish output is not affected by this move. -->
+  <Target Name="MoveDllsToLib" AfterTargets="Build" Condition="'$(IsPublishing)' != 'true'">
     <ItemGroup>
       <DependencyDlls Include="$(OutputPath)*.dll" Exclude="$(OutputPath)$(AssemblyName).dll" />
     </ItemGroup>
     <MakeDir Directories="$(OutputPath)lib" />
     <Move SourceFiles="@(DependencyDlls)" DestinationFolder="$(OutputPath)lib" OverwriteReadOnlyFiles="true" />
+  </Target>
+
+  <!-- Build the configurator and copy its output into the main app output dir at build time -->
+  <Target Name="BuildAndCopyConfigurator" AfterTargets="Build" Condition="'$(IsPublishing)' != 'true'">
+    <MSBuild Projects="$(MSBuildThisFileDirectory)ArcadeShellConfigurator\ArcadeShellConfigurator.csproj"
+             Targets="Build"
+             Properties="Configuration=$(Configuration)" />
+    <ItemGroup>
+      <_CfgOut Include="$(MSBuildThisFileDirectory)ArcadeShellConfigurator\bin\$(Configuration)\net10.0-windows\ArcadeShellConfigurator.exe" />
+      <_CfgOut Include="$(MSBuildThisFileDirectory)ArcadeShellConfigurator\bin\$(Configuration)\net10.0-windows\ArcadeShellConfigurator.dll" />
+      <_CfgOut Include="$(MSBuildThisFileDirectory)ArcadeShellConfigurator\bin\$(Configuration)\net10.0-windows\ArcadeShellConfigurator.pdb"
+               Condition="Exists('$(MSBuildThisFileDirectory)ArcadeShellConfigurator\bin\$(Configuration)\net10.0-windows\ArcadeShellConfigurator.pdb')" />
+      <_CfgOut Include="$(MSBuildThisFileDirectory)ArcadeShellConfigurator\bin\$(Configuration)\net10.0-windows\ArcadeShellConfigurator.runtimeconfig.json" />
+      <_CfgOut Include="$(MSBuildThisFileDirectory)ArcadeShellConfigurator\bin\$(Configuration)\net10.0-windows\ArcadeShellConfigurator.deps.json" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_CfgOut)"
+          DestinationFolder="$(OutputPath)"
+          SkipUnchangedFiles="true"
+          OverwriteReadOnlyFiles="true" />
+  </Target>
+
+  <!--
+    After dotnet publish: trigger a publish of the configurator to the *same* PublishDir
+    so both apps always land in one folder from a single publish command or IDE publish.
+  -->
+  <Target Name="CopyConfiguratorToPublishDir" AfterTargets="Publish" Condition="'$(PublishDir)' != ''">
+    <MSBuild Projects="$(MSBuildThisFileDirectory)ArcadeShellConfigurator\ArcadeShellConfigurator.csproj"
+             Targets="Publish"
+             Properties="Configuration=$(Configuration);
+                         PublishDir=$(PublishDir);
+                         RuntimeIdentifier=$(RuntimeIdentifier);
+                         SelfContained=$(SelfContained);
+                         PublishReadyToRun=$(PublishReadyToRun);
+                         IsPublishing=true" />
   </Target>
 
 </Project>

@@ -8,22 +8,22 @@
   },
   "paths": {
     "toolsRoot": "F:\\",
-    "imagesRoot": "Img\\",
+    "imagesRoot": "Media\\Img",
     "networkWaitSeconds": 15,
-    "videoBackground": "C:\\Users\\trume76\\ArcadeShellSelector\\Bkg\\Background.mp4"
+    "videoBackground": "Media\\Bkg\\Background.mp4"
   },
   "options": [
     {
       "label": "HyperSpin 12tb",
       "exe": "Player 3 MAX\\Player 3 MAX\\Player 3 MAX.exe",
-      "image": "C:\\Users\\trume76\\ArcadeShellSelector\\bin\\Release\\net10.0-windows\\Img\\shell.png",
-      "thumbVideo": "C:\\Users\\trume76\\Downloads\\takeout-20250804T091817Z-2-001\\Takeout\\Google Photos\\Photos from 2020\\20200209_195607.mp4"
+      "image": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Img\\shell1.png",
+      "thumbVideo": "C:\\Users\\trume76\\Downloads\\takeout-20250804T091817Z-2-001\\Takeout\\Google Photos\\Photos from 2020\\VID-20200130-WA0002.mp4"
     },
     {
       "label": "CoinOps Arcade Next",
       "exe": "I:\\Emu\\Emulators\\Demul\\demul.exe",
       "image": "G:\\CoinOPS Collections\\CoinOPS Collections\\CoinOPS Collections.jpg",
-      "thumbVideo": "C:\\Users\\trume76\\Videos\\2022-09-28 11-28-00.mkv"
+      "thumbVideo": "C:\\Users\\trume76\\Downloads\\WhatsApp Video 2024-09-17 at 00.12.21.mp4"
     },
     {
       "label": "CoinOps Legens",
@@ -40,7 +40,7 @@
   ],
   "music": {
     "enabled": true,
-    "musicRoot": "Music",
+    "musicRoot": "Media\\Music",
     "files": [],
     "volume": 100,
     "audioDevice": "MX27UC (NVIDIA High Definition Audio)"
