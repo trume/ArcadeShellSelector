@@ -151,6 +151,26 @@ namespace ArcadeShellSelector
             lastButtons = buttons;
         }
 
+        private static bool IsXInputDevice(DeviceInstance di)
+        {
+            // XInput devices expose a well-known HID usage page (0x01) and
+            // their product GUIDs embed the string "IG_" when created by the
+            // XInput driver.  The InstanceGuid trick is the standard way to
+            // detect them; the name check is a fallback.
+            var id = di.InstanceGuid.ToString();
+            if (id.Contains("IG_", StringComparison.OrdinalIgnoreCase))
+                return true;
+            var pid = di.ProductGuid.ToString();
+            if (pid.Contains("IG_", StringComparison.OrdinalIgnoreCase))
+                return true;
+            // Fallback: name-based filter
+            var name = di.ProductName;
+            if (name.Contains("XINPUT", StringComparison.OrdinalIgnoreCase)
+                || name.Contains("Xbox", StringComparison.OrdinalIgnoreCase))
+                return true;
+            return false;
+        }
+
         private void InitDirectInput()
         {
             if (!config.Input.DInputEnabled) return;
@@ -161,12 +181,18 @@ namespace ArcadeShellSelector
                 var devices = _directInput
                     .GetDevices(SharpDX.DirectInput.DeviceType.Gamepad, DeviceEnumerationFlags.AttachedOnly)
                     .Concat(_directInput.GetDevices(SharpDX.DirectInput.DeviceType.Joystick, DeviceEnumerationFlags.AttachedOnly))
-                    .Where(di => !di.ProductName.Contains("XINPUT", StringComparison.OrdinalIgnoreCase))
+                    .Where(di => !IsXInputDevice(di))
                     .ToList();
 
                 if (devices.Count == 0)
                 {
                     DebugLogger.Log("DInput", "No non-XInput joystick/gamepad found.");
+                    // Log skipped devices for diagnostics
+                    var all = _directInput
+                        .GetDevices(SharpDX.DirectInput.DeviceType.Gamepad, DeviceEnumerationFlags.AttachedOnly)
+                        .Concat(_directInput.GetDevices(SharpDX.DirectInput.DeviceType.Joystick, DeviceEnumerationFlags.AttachedOnly));
+                    foreach (var d in all)
+                        DebugLogger.Log("DInput", $"Skipped (XInput): {d.ProductName} [{d.InstanceGuid}]");
                     return;
                 }
 
