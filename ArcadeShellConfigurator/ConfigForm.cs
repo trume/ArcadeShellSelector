@@ -8,6 +8,7 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Windows.Forms;
 using ArcadeShellSelector;
+using NAudio.CoreAudioApi;
 using SharpDX.DirectInput;
 using SharpDX.XInput;
 
@@ -35,12 +36,13 @@ namespace ArcadeShellConfigurator
         private TextBox txtMusicRoot = null!;
         private TrackBar trkVolume = null!;
         private Label lblVolumeValue = null!;
-        private TextBox txtAudioDevice = null!;
+        private ComboBox cboAudioDevice = null!;
 
         // Options tab
         private DataGridView gridOptions = null!;
 
         // Input tab
+        private CheckBox chkXInputEnabled = null!;
         private CheckBox chkDInputEnabled = null!;
         private NumericUpDown numDInputButtonSelect = null!;
         private NumericUpDown numDInputButtonBack = null!;
@@ -48,6 +50,8 @@ namespace ArcadeShellConfigurator
         private NumericUpDown numDInputButtonRight = null!;
 
         // Input test panel — DirectInput
+        private GroupBox grpDI = null!;
+        private InputVisualPanel visualDInput = null!;
         private ListBox lstDInputDevices = null!;
         private Button btnTestDInput = null!;
         private Label lblTestDevice = null!;
@@ -59,6 +63,8 @@ namespace ArcadeShellConfigurator
         private readonly List<DeviceInstance> _dinputDeviceList = new();
 
         // Input test panel — XInput
+        private GroupBox grpXI = null!;
+        private InputVisualPanel visualXInput = null!;
         private ListBox lstXInputSlots = null!;
         private Button btnTestXInput = null!;
         private Label lblXInputStatus = null!;
@@ -68,6 +74,17 @@ namespace ArcadeShellConfigurator
 
         // Bottom panel
         private bool _suppressDirty;
+        private StatusStrip statusStrip = null!;
+        private ToolStripStatusLabel lblStatusPath = null!;
+        private ToolStripStatusLabel lblStatusSave = null!;
+
+        // Log tab
+        private RichTextBox txtLog = null!;
+        private FileSystemWatcher? _logWatcher;
+        private System.Windows.Forms.Timer? _logRefreshTimer;
+        private long _logLastLength;
+        private string _logFilePath = "";
+        private string _logRawContent = "";
 
         public ConfigForm()
         {
@@ -109,12 +126,13 @@ namespace ArcadeShellConfigurator
         private void InitializeUI()
         {
             Text = "Arcade Shell Configurator";
-            Size = new Size(820, 750);
-            MinimumSize = new Size(820, 600);
+            Size = new Size(860, 900);
+            MinimumSize = new Size(820, 750);
             StartPosition = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.Sizable;
             MaximizeBox = true;
             MinimizeBox = true;
+            Padding = new Padding(0);
 
             // Set window icon from the embedded app.ico resource
             var icoPath = Path.Combine(Path.GetDirectoryName(Application.ExecutablePath) ?? ".", "app.ico");
@@ -122,46 +140,101 @@ namespace ArcadeShellConfigurator
                 Icon = new Icon(icoPath);
 
             var tabs = new TabControl { Dock = DockStyle.Fill };
+            tabs.Padding = new Point(12, 6);
 
             // === General tab ===
-            var tabGeneral = new TabPage("General");
-            var lblTitle = new Label { Text = "App Title:", Location = new Point(16, 20), AutoSize = true };
-            txtTitle = new TextBox { Location = new Point(140, 17), Width = 400 };
-            chkTopMost = new CheckBox { Text = "Always on top (TopMost)", Location = new Point(140, 50), AutoSize = true };
-            chkLogging = new CheckBox { Text = "Enable logging (Depuracion)", Location = new Point(140, 80), AutoSize = true };
-            tabGeneral.Controls.AddRange(new Control[] { lblTitle, txtTitle, chkTopMost, chkLogging });
+            var tabGeneral = new TabPage("General") { Padding = new Padding(8) };
+
+            var grpApp = new GroupBox
+            {
+                Text = "Application",
+                Dock = DockStyle.Top,
+                Height = 62,
+                Margin = new Padding(0, 0, 0, 4),
+                Padding = new Padding(12, 8, 12, 8)
+            };
+            var lblTitle = new Label { Text = "App Title:", Location = new Point(16, 24), AutoSize = true };
+            txtTitle = new TextBox { Location = new Point(140, 21), Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right };
+            grpApp.Controls.AddRange(new Control[] { lblTitle, txtTitle });
+            grpApp.Layout += (_, _) =>
+            {
+                txtTitle.Width = grpApp.ClientSize.Width - txtTitle.Left - 16;
+            };
+
+            var grpBehavior = new GroupBox
+            {
+                Text = "Behavior",
+                Dock = DockStyle.Top,
+                Height = 48,
+                Margin = new Padding(0, 0, 0, 4),
+                Padding = new Padding(12, 8, 12, 8)
+            };
+            chkTopMost = new CheckBox { Text = "Always on top (TopMost)", Location = new Point(16, 22), AutoSize = true };
+            var lblSep = new Label { Text = "|", Location = new Point(210, 23), AutoSize = true, ForeColor = SystemColors.GrayText };
+            chkLogging = new CheckBox { Text = "Enable logging (Depuracion)", Location = new Point(228, 22), AutoSize = true };
+            grpBehavior.Controls.AddRange(new Control[] { chkTopMost, lblSep, chkLogging });
 
             // === Paths tab ===
-            var tabPaths = new TabPage("Configuración Launcher");
-            var lblToolsRoot = new Label { Text = "Tools Root:", Location = new Point(16, 20), AutoSize = true };
-            txtToolsRoot = new TextBox { Location = new Point(140, 17), Width = 370 };
-            var btnToolsRoot = new Button { Text = "...", Location = new Point(516, 16), Width = 30, Height = 23 };
+            var tabPaths = new TabPage("Directorios") { Padding = new Padding(8) };
+
+            var grpDirectories = new GroupBox
+            {
+                Text = "Directories",
+                Dock = DockStyle.Top,
+                Height = 120,
+                Padding = new Padding(12, 8, 12, 8)
+            };
+            var lblToolsRoot = new Label { Text = "Tools Root:", Location = new Point(16, 24), AutoSize = true };
+            txtToolsRoot = new TextBox { Location = new Point(140, 21), Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right };
+            var btnToolsRoot = new Button { Text = "...", Width = 30, Height = 23, Anchor = AnchorStyles.Top | AnchorStyles.Right };
             btnToolsRoot.Click += (_, _) => BrowseDrive(txtToolsRoot);
             var lblToolsHint = new Label
             {
                 Text = "Drive or root folder where child apps live (e.g. D:\\)",
-                Location = new Point(140, 40),
+                Location = new Point(140, 44),
                 AutoSize = true,
                 ForeColor = SystemColors.GrayText,
                 Font = new Font(Font, FontStyle.Italic),
             };
 
-            var lblImagesRoot = new Label { Text = "Images Root:", Location = new Point(16, 65), AutoSize = true };
-            txtImagesRoot = new TextBox { Location = new Point(140, 62), Width = 370 };
-            var btnImagesRoot = new Button { Text = "...", Location = new Point(516, 61), Width = 30, Height = 23 };
+            var lblImagesRoot = new Label { Text = "Images Root:", Location = new Point(16, 72), AutoSize = true };
+            txtImagesRoot = new TextBox { Location = new Point(140, 69), Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right };
+            var btnImagesRoot = new Button { Text = "...", Width = 30, Height = 23, Anchor = AnchorStyles.Top | AnchorStyles.Right };
             btnImagesRoot.Click += (_, _) => BrowseFolderUnder(txtImagesRoot, txtToolsRoot.Text, _configPath);
             var lblImagesHint = new Label
             {
                 Text = "Relative path inside Tools Root where artwork is stored",
-                Location = new Point(140, 85),
+                Location = new Point(140, 92),
                 AutoSize = true,
                 ForeColor = SystemColors.GrayText,
                 Font = new Font(Font, FontStyle.Italic),
             };
 
-            var lblVideo = new Label { Text = "Video Background:", Location = new Point(16, 115), AutoSize = true };
-            txtVideoBackground = new TextBox { Location = new Point(140, 112), Width = 370 };
-            var btnVideo = new Button { Text = "...", Location = new Point(516, 111), Width = 30, Height = 23 };
+            grpDirectories.Controls.AddRange(new Control[] {
+                lblToolsRoot, txtToolsRoot, btnToolsRoot, lblToolsHint,
+                lblImagesRoot, txtImagesRoot, btnImagesRoot, lblImagesHint
+            });
+
+            // Position browse buttons and size textboxes on layout
+            grpDirectories.Layout += (_, _) =>
+            {
+                int right = grpDirectories.ClientSize.Width - 16;
+                btnToolsRoot.Location = new Point(right - btnToolsRoot.Width, 21);
+                txtToolsRoot.Width = btnToolsRoot.Left - txtToolsRoot.Left - 6;
+                btnImagesRoot.Location = new Point(right - btnImagesRoot.Width, 69);
+                txtImagesRoot.Width = btnImagesRoot.Left - txtImagesRoot.Left - 6;
+            };
+
+            var grpVideo = new GroupBox
+            {
+                Text = "Video Background",
+                Dock = DockStyle.Top,
+                Height = 100,
+                Padding = new Padding(12, 8, 12, 8)
+            };
+            var lblVideo = new Label { Text = "Video File:", Location = new Point(16, 28), AutoSize = true };
+            txtVideoBackground = new TextBox { Location = new Point(140, 25), Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right };
+            var btnVideo = new Button { Text = "...", Width = 30, Height = 23, Anchor = AnchorStyles.Top | AnchorStyles.Right };
             btnVideo.Click += (_, _) =>
             {
                 BrowseAndDeployVideo();
@@ -171,58 +244,125 @@ namespace ArcadeShellConfigurator
             var lblVideoHint = new Label
             {
                 Text = "Video file played as background (copied to Bkg folder automatically)",
-                Location = new Point(140, 135),
+                Location = new Point(140, 52),
                 AutoSize = true,
                 ForeColor = SystemColors.GrayText,
                 Font = new Font(Font, FontStyle.Italic),
             };
             picVideoThumb = new PictureBox
             {
-                Location = new Point(552, 107),
                 Size = new Size(80, 48),
                 SizeMode = PictureBoxSizeMode.Zoom,
                 BorderStyle = BorderStyle.FixedSingle,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
             };
 
-            tabPaths.Controls.AddRange(new Control[] {
-                lblToolsRoot, txtToolsRoot, btnToolsRoot, lblToolsHint,
-                lblImagesRoot, txtImagesRoot, btnImagesRoot, lblImagesHint,
-                lblVideo, txtVideoBackground, btnVideo, lblVideoHint, picVideoThumb
-            });
+            grpVideo.Controls.AddRange(new Control[] { lblVideo, txtVideoBackground, btnVideo, lblVideoHint, picVideoThumb });
+
+            // Position video thumb, browse button, and textbox on layout
+            grpVideo.Layout += (_, _) =>
+            {
+                int right = grpVideo.ClientSize.Width - 16;
+                picVideoThumb.Location = new Point(right - picVideoThumb.Width, 22);
+                btnVideo.Location = new Point(picVideoThumb.Left - btnVideo.Width - 6, 25);
+                txtVideoBackground.Width = btnVideo.Left - txtVideoBackground.Left - 6;
+            };
+
+            tabPaths.Controls.Add(grpVideo);
+            tabPaths.Controls.Add(grpDirectories);
 
             // === Music tab ===
-            var tabMusic = new TabPage("Musica");
-            chkMusicEnabled = new CheckBox { Text = "Music enabled", Location = new Point(16, 20), AutoSize = true };
+            var tabMusic = new TabPage("Musica") { Padding = new Padding(8) };
 
-            var lblMusicRoot = new Label { Text = "Music Folder:", Location = new Point(16, 55), AutoSize = true };
-            txtMusicRoot = new TextBox { Location = new Point(140, 52), Width = 370 };
-            var btnMusicRoot = new Button { Text = "...", Location = new Point(516, 51), Width = 30, Height = 23 };
+            var grpPlayback = new GroupBox
+            {
+                Text = "Playback",
+                Dock = DockStyle.Top,
+                Height = 80,
+                Padding = new Padding(12, 8, 12, 8)
+            };
+            chkMusicEnabled = new CheckBox { Text = "Music enabled", Location = new Point(16, 24), AutoSize = true };
+            var lblMusicRoot = new Label { Text = "Music Folder:", Location = new Point(16, 52), AutoSize = true };
+            txtMusicRoot = new TextBox { Location = new Point(140, 49), Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right };
+            var btnMusicRoot = new Button { Text = "...", Width = 30, Height = 23, Anchor = AnchorStyles.Top | AnchorStyles.Right };
             btnMusicRoot.Click += (_, _) => BrowseFolder(txtMusicRoot, _configPath);
+            grpPlayback.Controls.AddRange(new Control[] { chkMusicEnabled, lblMusicRoot, txtMusicRoot, btnMusicRoot });
 
-            var lblVolume = new Label { Text = "Volume:", Location = new Point(16, 93), AutoSize = true };
+            grpPlayback.Layout += (_, _) =>
+            {
+                int right = grpPlayback.ClientSize.Width - 16;
+                btnMusicRoot.Location = new Point(right - btnMusicRoot.Width, 49);
+                txtMusicRoot.Width = btnMusicRoot.Left - txtMusicRoot.Left - 6;
+            };
+
+            var grpAudio = new GroupBox
+            {
+                Text = "Audio Output",
+                Dock = DockStyle.Top,
+                Height = 110,
+                Padding = new Padding(12, 8, 12, 8)
+            };
+            var lblVolume = new Label { Text = "Volume:", Location = new Point(16, 28), AutoSize = true };
             trkVolume = new TrackBar
             {
-                Location = new Point(140, 82),
+                Location = new Point(140, 20),
                 Width = 300,
                 Minimum = 0,
                 Maximum = 100,
                 TickFrequency = 10,
                 LargeChange = 10,
                 SmallChange = 1,
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
             };
-            lblVolumeValue = new Label { Text = "0", Location = new Point(448, 93), AutoSize = true };
-            trkVolume.ValueChanged += (_, _) => lblVolumeValue.Text = trkVolume.Value.ToString();
+            lblVolumeValue = new Label { Text = "0", Location = new Point(448, 28), AutoSize = true, Anchor = AnchorStyles.Top | AnchorStyles.Right, Font = new Font(Font.FontFamily, 9f, FontStyle.Bold) };
+            trkVolume.ValueChanged += (_, _) => lblVolumeValue.Text = $"{trkVolume.Value}%";
 
-            var lblAudioDev = new Label { Text = "Audio Device:", Location = new Point(16, 140), AutoSize = true };
-            txtAudioDevice = new TextBox { Location = new Point(140, 137), Width = 400 };
+            var lblAudioDev = new Label { Text = "Audio Device:", Location = new Point(16, 72), AutoSize = true };
+            cboAudioDevice = new ComboBox
+            {
+                Location = new Point(140, 69),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                DrawMode = DrawMode.OwnerDrawFixed
+            };
+            cboAudioDevice.DrawItem += (s, e) =>
+            {
+                if (e.Index < 0) return;
+                e.DrawBackground();
+                var item = cboAudioDevice.Items[e.Index]?.ToString() ?? "";
+                var isDefault = item.EndsWith(" *");
+                var font = isDefault ? new Font(e.Font!, FontStyle.Bold) : e.Font!;
+                var brush = (e.State & DrawItemState.Selected) != 0
+                    ? SystemBrushes.HighlightText
+                    : isDefault ? Brushes.DarkGreen : SystemBrushes.ControlText;
+                e.Graphics.DrawString(item, font, brush, e.Bounds);
+                if (isDefault) font.Dispose();
+                e.DrawFocusRectangle();
+            };
+            PopulateAudioDevices();
+            var lblAudioDevHint = new Label
+            {
+                Text = "First entry uses system default; * = current default",
+                Location = new Point(140, 92),
+                AutoSize = true,
+                ForeColor = SystemColors.GrayText,
+                Font = new Font(Font, FontStyle.Italic),
+            };
+            grpAudio.Controls.AddRange(new Control[] { lblVolume, trkVolume, lblVolumeValue, lblAudioDev, cboAudioDevice, lblAudioDevHint });
 
-            tabMusic.Controls.AddRange(new Control[] {
-                chkMusicEnabled, lblMusicRoot, txtMusicRoot, btnMusicRoot,
-                lblVolume, trkVolume, lblVolumeValue, lblAudioDev, txtAudioDevice
-            });
+            // Position volume label and size controls on layout
+            grpAudio.Layout += (_, _) =>
+            {
+                int right = grpAudio.ClientSize.Width - 16;
+                lblVolumeValue.Location = new Point(right - 40, 28);
+                trkVolume.Width = lblVolumeValue.Left - trkVolume.Left - 6;
+                cboAudioDevice.Width = right - cboAudioDevice.Left;
+            };
 
-            // === Options (Apps) tab ===
-            var tabOptions = new TabPage("Opciones Lanzador");
+            tabMusic.Controls.Add(grpAudio);
+            tabMusic.Controls.Add(grpPlayback);
+
+            // === Options grid (added to General tab) ===
             gridOptions = new DataGridView
             {
                 Dock = DockStyle.Fill,
@@ -231,8 +371,18 @@ namespace ArcadeShellConfigurator
                 AllowUserToDeleteRows = true,
                 EditMode = DataGridViewEditMode.EditOnEnter,
             };
-            gridOptions.Columns.Add("Label", "Label");
-            gridOptions.Columns.Add("Exe", "Front End (Exe)");
+            gridOptions.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "Label",
+                HeaderText = "FrontEnd (Nombre)",
+                FillWeight = 30,
+            });
+            gridOptions.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "Exe",
+                HeaderText = "Front End (Exe)",
+                FillWeight = 50,
+            });
             gridOptions.Columns.Add(new DataGridViewButtonColumn
             {
                 Name = "BrowseExe",
@@ -280,160 +430,488 @@ namespace ArcadeShellConfigurator
                 Width = 30,
                 AutoSizeMode = DataGridViewAutoSizeColumnMode.None,
             });
+            gridOptions.Columns.Add(new DataGridViewButtonColumn
+            {
+                Name = "DeleteRow",
+                HeaderText = "",
+                Text = "✖",
+                UseColumnTextForButtonValue = true,
+                Width = 30,
+                AutoSizeMode = DataGridViewAutoSizeColumnMode.None,
+                FlatStyle = FlatStyle.Flat,
+            });
             gridOptions.RowTemplate.Height = 48;
             gridOptions.CellContentClick += GridOptions_CellContentClick;
 
-            tabOptions.Controls.AddRange(new Control[] { gridOptions });
+            var grpOptions = new GroupBox
+            {
+                Text = "Opciones del lanzador",
+                Dock = DockStyle.Fill,
+                Padding = new Padding(8, 12, 8, 8),
+                MinimumSize = new Size(0, 160),
+            };
+            gridOptions.Dock = DockStyle.Fill;
+            grpOptions.Controls.Add(gridOptions);
+
+            // === Onboarding image panel ===
+            var imgDir = Path.Combine(Path.GetDirectoryName(Application.ExecutablePath) ?? ".", "Media", "Img");
+            // Walk up to find the Media\Img folder (handles running from bin\Debug or bin\Release)
+            if (!Directory.Exists(imgDir))
+            {
+                var search = Path.GetDirectoryName(Application.ExecutablePath);
+                while (search != null)
+                {
+                    var candidate = Path.Combine(search, "Media", "Img");
+                    if (Directory.Exists(candidate)) { imgDir = candidate; break; }
+                    search = Path.GetDirectoryName(search);
+                }
+            }
+
+            var onboardingImages = new Image?[6]; // index 0..5
+            for (int i = 0; i <= 5; i++)
+            {
+                var p = Path.Combine(imgDir, $"Onboarding{i}.png");
+                if (File.Exists(p))
+                    onboardingImages[i] = Image.FromFile(p);
+            }
+
+            var pnlOnboarding = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 290,
+                Padding = new Padding(4, 8, 4, 4),
+            };
+            var picOnboarding = new PictureBox
+            {
+                Dock = DockStyle.Fill,
+                SizeMode = PictureBoxSizeMode.Zoom,
+                Image = onboardingImages[0], // default when tab loads
+                BackColor = Color.FromArgb(30, 30, 30),
+            };
+            var lblOnboardingHint = new Label
+            {
+                Dock = DockStyle.Bottom,
+                Height = 20,
+                Text = "",
+                TextAlign = ContentAlignment.MiddleCenter,
+                ForeColor = SystemColors.GrayText,
+                Font = new Font(Font.FontFamily, 8f, FontStyle.Italic),
+            };
+            pnlOnboarding.Controls.Add(picOnboarding);
+            pnlOnboarding.Controls.Add(lblOnboardingHint);
+
+            // Map grid columns to onboarding images
+            var columnImageMap = new Dictionary<string, (int imgIndex, string hint)>
+            {
+                ["Label"]            = (3, "Nombre del frontend"),
+                ["Exe"]              = (5, "Ubicación del ejecutable"),
+                ["BrowseExe"]        = (5, "Ubicación del ejecutable"),
+                ["ImageThumb"]       = (2, "Imagen del frontend"),
+                ["ImagePath"]        = (2, "Imagen del frontend"),
+                ["BrowseImage"]      = (2, "Imagen del frontend"),
+                ["VideoThumb"]       = (4, "Vídeo thumbnail al pasar el ratón"),
+                ["ThumbVideoPath"]   = (4, "Vídeo thumbnail al pasar el ratón"),
+                ["BrowseThumbVideo"] = (4, "Vídeo thumbnail al pasar el ratón"),
+            };
+
+            void ShowOnboarding(int index, string hint)
+            {
+                if (index >= 0 && index <= 5 && onboardingImages[index] != null)
+                {
+                    picOnboarding.Image = onboardingImages[index];
+                    lblOnboardingHint.Text = hint;
+                }
+            }
+
+            // Switch image when a grid cell is selected
+            gridOptions.CellEnter += (_, e) =>
+            {
+                var colName = gridOptions.Columns[e.ColumnIndex].Name;
+                if (columnImageMap.TryGetValue(colName, out var info))
+                    ShowOnboarding(info.imgIndex, info.hint);
+            };
+
+            // Switch to Onboarding1 when the title field is focused
+            txtTitle.Enter += (_, _) => ShowOnboarding(1, "Título de la aplicación");
+
+            // Add grid group FIRST so Dock.Fill works under the Top-docked groups
+            tabGeneral.Controls.Add(grpOptions);
+            tabGeneral.Controls.Add(pnlOnboarding);
+            tabGeneral.Controls.Add(grpBehavior);
+            tabGeneral.Controls.Add(grpApp);
 
             // === Input tab ===
-            var tabInput = new TabPage("Control");
-            chkDInputEnabled = new CheckBox { Text = "DirectInput habilitado", Location = new Point(16, 20), AutoSize = true };
+            var tabInput = new TabPage("Controles") { Padding = new Padding(8) };
 
-            var lblSelect = new Label { Text = "Botón Seleccionar (base 1):", Location = new Point(16, 58), AutoSize = true };
-            numDInputButtonSelect = new NumericUpDown { Location = new Point(220, 55), Width = 70, Minimum = 1, Maximum = 32, Value = 1 };
+            var grpInputSettings = new GroupBox
+            {
+                Text = "Configuración de entrada",
+                Dock = DockStyle.Top,
+                Height = 220,
+                Padding = new Padding(12, 8, 12, 8)
+            };
+            chkXInputEnabled = new CheckBox { Text = "XInput habilitado (Xbox / compatible)", Location = new Point(16, 20), AutoSize = true };
+            chkDInputEnabled = new CheckBox { Text = "DirectInput habilitado (arcade encoders)", Location = new Point(16, 46), AutoSize = true };
 
-            var lblBack = new Label { Text = "Botón Atrás / Cerrar (base 1):", Location = new Point(16, 91), AutoSize = true };
-            numDInputButtonBack = new NumericUpDown { Location = new Point(220, 88), Width = 70, Minimum = 1, Maximum = 32, Value = 2 };
+            var lblSelect = new Label { Text = "Botón Seleccionar (base 1):", Location = new Point(16, 84), AutoSize = true };
+            numDInputButtonSelect = new NumericUpDown { Location = new Point(220, 81), Width = 70, Minimum = 1, Maximum = 32, Value = 1 };
 
-            var lblLeft = new Label { Text = "Botón Izquierda (0 = eje/POV):", Location = new Point(16, 124), AutoSize = true };
-            numDInputButtonLeft = new NumericUpDown { Location = new Point(220, 121), Width = 70, Minimum = 0, Maximum = 32, Value = 0 };
+            var lblBack = new Label { Text = "Botón Atrás / Cerrar (base 1):", Location = new Point(16, 117), AutoSize = true };
+            numDInputButtonBack = new NumericUpDown { Location = new Point(220, 114), Width = 70, Minimum = 1, Maximum = 32, Value = 2 };
 
-            var lblRight = new Label { Text = "Botón Derecha (0 = eje/POV):", Location = new Point(16, 157), AutoSize = true };
-            numDInputButtonRight = new NumericUpDown { Location = new Point(220, 154), Width = 70, Minimum = 0, Maximum = 32, Value = 0 };
+            var lblLeft = new Label { Text = "Botón Izquierda (0 = eje/POV):", Location = new Point(16, 150), AutoSize = true };
+            numDInputButtonLeft = new NumericUpDown { Location = new Point(220, 147), Width = 70, Minimum = 0, Maximum = 32, Value = 0 };
+
+            var lblRight = new Label { Text = "Botón Derecha (0 = eje/POV):", Location = new Point(16, 183), AutoSize = true };
+            numDInputButtonRight = new NumericUpDown { Location = new Point(220, 180), Width = 70, Minimum = 0, Maximum = 32, Value = 0 };
 
             var lblInputHint = new Label
             {
                 Text = "0 = navegar con eje analógico / hat POV del joystick.",
-                Location = new Point(16, 193),
+                Location = new Point(16, 204),
                 AutoSize = true,
                 ForeColor = SystemColors.GrayText
             };
+            grpInputSettings.Controls.AddRange(new Control[]
+            {
+                chkXInputEnabled, chkDInputEnabled,
+                lblSelect, numDInputButtonSelect,
+                lblBack, numDInputButtonBack,
+                lblLeft, numDInputButtonLeft,
+                lblRight, numDInputButtonRight,
+                lblInputHint
+            });
 
             // Test panel — two columns: DirectInput (left) | XInput (right)
             var grpTest = new GroupBox
             {
                 Text = "Probar dispositivo",
-                Location = new Point(10, 215),
-                Size = new Size(745, 250),
-                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom
+                Dock = DockStyle.Fill,
+                Padding = new Padding(8, 12, 8, 8)
             };
 
             // --- DirectInput column ---
-            var grpDI = new GroupBox
+            grpDI = new GroupBox
             {
                 Text = "DirectInput",
-                Location = new Point(8, 18),
-                Size = new Size(360, 220),
-                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Bottom
+                Dock = DockStyle.Left,
+                Width = 370,
+                Padding = new Padding(8, 8, 8, 8)
             };
             lstDInputDevices = new ListBox
             {
                 Location = new Point(8, 18),
-                Size = new Size(340, 68),
+                Size = new Size(340, 56),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                 SelectionMode = SelectionMode.One,
                 HorizontalScrollbar = true
             };
-            btnTestDInput  = new Button { Text = "\u25b6 Iniciar", Location = new Point(8, 92), Width = 110, Height = 24 };
+            btnTestDInput  = new Button { Text = "\u25b6 Iniciar", Location = new Point(8, 80), Width = 110, Height = 24 };
             btnTestDInput.Click += BtnTestDInput_Click;
-            lblTestDevice  = new Label { Text = "Activo: \u2014", Location = new Point(8, 124), AutoSize = true };
+            lblTestDevice  = new Label { Text = "Activo: \u2014", Location = new Point(124, 84), AutoSize = true };
+            visualDInput = new InputVisualPanel
+            {
+                Location = new Point(8, 110),
+                Size = new Size(340, 130),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom
+            };
             lblTestButtons = new Label
             {
                 Text = "Botones: \u2014",
-                Location = new Point(8, 148),
+                Location = new Point(8, 246),
                 AutoSize = true,
-                Font = new Font("Courier New", 9f)
+                Font = new Font("Courier New", 8.5f),
+                Anchor = AnchorStyles.Bottom | AnchorStyles.Left
             };
             lblTestAxes = new Label
             {
                 Text = "Eje X: \u2014 | Eje Y: \u2014 | POV: \u2014",
-                Location = new Point(8, 178),
+                Location = new Point(8, 266),
                 AutoSize = true,
-                ForeColor = SystemColors.GrayText
+                ForeColor = SystemColors.GrayText,
+                Anchor = AnchorStyles.Bottom | AnchorStyles.Left
             };
-            grpDI.Controls.AddRange(new Control[] { lstDInputDevices, btnTestDInput, lblTestDevice, lblTestButtons, lblTestAxes });
+            grpDI.Controls.AddRange(new Control[] { lstDInputDevices, btnTestDInput, lblTestDevice, visualDInput, lblTestButtons, lblTestAxes });
 
             // --- XInput column ---
-            var grpXI = new GroupBox
+            grpXI = new GroupBox
             {
                 Text = "XInput (Xbox / compatible)",
-                Location = new Point(378, 18),
-                Size = new Size(360, 220),
-                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom
+                Dock = DockStyle.Fill,
+                Padding = new Padding(8, 8, 8, 8)
             };
             lstXInputSlots = new ListBox
             {
                 Location = new Point(8, 18),
-                Size = new Size(340, 68),
+                Size = new Size(340, 56),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                 SelectionMode = SelectionMode.One
             };
-            btnTestXInput  = new Button { Text = "\u25b6 Iniciar", Location = new Point(8, 92), Width = 110, Height = 24 };
+            btnTestXInput  = new Button { Text = "\u25b6 Iniciar", Location = new Point(8, 80), Width = 110, Height = 24 };
             btnTestXInput.Click += BtnTestXInput_Click;
-            lblXInputStatus  = new Label { Text = "Activo: \u2014", Location = new Point(8, 124), AutoSize = true };
+            lblXInputStatus  = new Label { Text = "Activo: \u2014", Location = new Point(124, 84), AutoSize = true };
+            visualXInput = new InputVisualPanel
+            {
+                Location = new Point(8, 110),
+                Size = new Size(340, 130),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom
+            };
             lblXInputButtons = new Label
             {
                 Text = "Botones: \u2014",
-                Location = new Point(8, 148),
+                Location = new Point(8, 246),
                 AutoSize = true,
-                Font = new Font("Courier New", 9f)
+                Font = new Font("Courier New", 8.5f),
+                Anchor = AnchorStyles.Bottom | AnchorStyles.Left
             };
             lblXInputAxes = new Label
             {
                 Text = "LX: \u2014 | LY: \u2014 | LT: \u2014 | RT: \u2014",
-                Location = new Point(8, 178),
+                Location = new Point(8, 266),
                 AutoSize = true,
-                ForeColor = SystemColors.GrayText
+                ForeColor = SystemColors.GrayText,
+                Anchor = AnchorStyles.Bottom | AnchorStyles.Left
             };
-            grpXI.Controls.AddRange(new Control[] { lstXInputSlots, btnTestXInput, lblXInputStatus, lblXInputButtons, lblXInputAxes });
+            grpXI.Controls.AddRange(new Control[] { lstXInputSlots, btnTestXInput, lblXInputStatus, visualXInput, lblXInputButtons, lblXInputAxes });
 
-            grpTest.Controls.AddRange(new Control[] { grpDI, grpXI });
+            grpTest.Controls.AddRange(new Control[] { grpXI, grpDI });
 
-            tabInput.Controls.AddRange(new Control[]
+            tabInput.Controls.Add(grpTest);
+            tabInput.Controls.Add(grpInputSettings);
+
+            tabs.TabPages.AddRange(new[] { tabGeneral, tabPaths, tabMusic, tabInput });
+
+            // === Log tab ===
+            var tabLog = new TabPage("Log") { Padding = new Padding(4) };
+
+            txtLog = new RichTextBox
             {
-                chkDInputEnabled,
-                lblSelect, numDInputButtonSelect,
-                lblBack,   numDInputButtonBack,
-                lblLeft,   numDInputButtonLeft,
-                lblRight,  numDInputButtonRight,
-                lblInputHint,
-                grpTest
-            });
+                Dock = DockStyle.Fill,
+                ReadOnly = true,
+                BackColor = Color.FromArgb(12, 12, 12),
+                ForeColor = Color.FromArgb(0, 255, 65),
+                Font = new Font("Courier New", 9f),
+                WordWrap = false,
+                ScrollBars = RichTextBoxScrollBars.Both,
+            };
 
-            tabs.TabPages.AddRange(new[] { tabGeneral, tabPaths, tabMusic, tabInput, tabOptions });
+            txtLog.Resize += (_, _) => RefreshLogDisplay();
+
+            tabLog.Controls.Add(txtLog);
+
+            tabs.TabPages.Add(tabLog);
+
+            // "Clear Log" button — lives in the bottom panel but declared here so the tab handler can reference it
+            var btnClearLog = new Button
+            {
+                Text = "✖ Clear Log",
+                Width = 110,
+                Height = 32,
+                Location = new Point(12, 9),
+                FlatStyle = FlatStyle.System,
+                Enabled = false
+            };
+            btnClearLog.Click += BtnLogClear_Click;
+
+            // Recalculate padding when the Log tab is first shown
+            Button? _btnDefaults = null; // forward reference for tab handler
+            tabs.SelectedIndexChanged += (_, _) =>
+            {
+                if (tabs.SelectedTab == tabLog)
+                    BeginInvoke(RefreshLogDisplay);
+                btnClearLog.Enabled = tabs.SelectedTab == tabLog;
+                if (_btnDefaults != null)
+                    _btnDefaults.Enabled = tabs.SelectedIndex < 3; // General, Directorios, Musica
+            };
+
             Controls.Add(tabs);
 
-            // Bottom panel
-            var bottomPanel = new Panel { Dock = DockStyle.Bottom, Height = 50 };
-            var btnDefaults = new Button { Text = "Valores por defecto", Width = 150, Height = 32, Location = new Point(16, 9) };
+            Shown += (_, _) => InitLogWatcher();
+
+            // Bottom panel — defaults on the left, launch/close on the right
+            var bottomPanel = new Panel
+            {
+                Dock = DockStyle.Bottom,
+                Height = 50,
+                Padding = new Padding(12, 8, 12, 8),
+                BackColor = SystemColors.Control
+            };
+
+            var btnDefaults = new Button
+            {
+                Text = "Valores por defecto",
+                Width = 150,
+                Height = 32,
+                Location = new Point(130, 9),
+                FlatStyle = FlatStyle.System
+            };
+            _btnDefaults = btnDefaults;
             btnDefaults.Click += BtnDefaults_Click;
-            var btnClose = new Button { Text = "Close", Width = 100, Height = 32, Location = new Point(176, 9) };
-            btnClose.Click += (_, _) => Close();
-            var btnLaunch = new Button { Text = "Launch App", Width = 110, Height = 32, Location = new Point(286, 9) };
+
+            var btnLaunch = new Button
+            {
+                Text = "▶ Launch App",
+                Width = 120,
+                Height = 32,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                FlatStyle = FlatStyle.System
+            };
             btnLaunch.Click += BtnLaunch_Click;
-            bottomPanel.Controls.AddRange(new Control[] { btnDefaults, btnClose, btnLaunch });
+
+            var btnClose = new Button
+            {
+                Text = "Close",
+                Width = 90,
+                Height = 32,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                FlatStyle = FlatStyle.System
+            };
+            btnClose.Click += (_, _) => Close();
+
+            // Position right-aligned buttons relative to panel
+            bottomPanel.Layout += (_, _) =>
+            {
+                btnClose.Location = new Point(bottomPanel.ClientSize.Width - btnClose.Width - 12, 9);
+                btnLaunch.Location = new Point(btnClose.Left - btnLaunch.Width - 8, 9);
+            };
+            bottomPanel.Controls.AddRange(new Control[] { btnClearLog, btnDefaults, btnLaunch, btnClose });
             Controls.Add(bottomPanel);
 
-            // Wire up auto-save on every change
-            void OnChanged(object? s, EventArgs a) { if (!_suppressDirty) AutoSave(); }
-            txtTitle.TextChanged += OnChanged;
-            chkTopMost.CheckedChanged += OnChanged;
-            chkLogging.CheckedChanged += OnChanged;
-            txtToolsRoot.TextChanged += OnChanged;
-            txtImagesRoot.TextChanged += OnChanged;
-            txtVideoBackground.TextChanged += OnChanged;
-            chkMusicEnabled.CheckedChanged += OnChanged;
-            txtMusicRoot.TextChanged += OnChanged;
-            trkVolume.ValueChanged += OnChanged;
-            txtAudioDevice.TextChanged += OnChanged;
-            chkDInputEnabled.CheckedChanged += OnChanged;
-            numDInputButtonSelect.ValueChanged += OnChanged;
-            numDInputButtonBack.ValueChanged += OnChanged;
-            numDInputButtonLeft.ValueChanged += OnChanged;
-            numDInputButtonRight.ValueChanged += OnChanged;
-            gridOptions.CellValueChanged += (s, a) => { if (!_suppressDirty) AutoSave(); };
-            gridOptions.RowsAdded += (s, a) => { if (!_suppressDirty) AutoSave(); };
-            gridOptions.RowsRemoved += (s, a) => { if (!_suppressDirty) AutoSave(); };
+            // Status strip at the very bottom — shows config path and save status
+            statusStrip = new StatusStrip();
+            lblStatusPath = new ToolStripStatusLabel
+            {
+                Text = $"Config: {_configPath}",
+                Spring = true,
+                TextAlign = ContentAlignment.MiddleLeft,
+                ForeColor = SystemColors.GrayText
+            };
+            lblStatusSave = new ToolStripStatusLabel
+            {
+                Text = "",
+                ForeColor = Color.ForestGreen
+            };
+            statusStrip.Items.AddRange(new ToolStripItem[] { lblStatusPath, lblStatusSave });
+            Controls.Add(statusStrip);
+
+            // Wire up auto-save on every change, logging diffs
+            var _prevValues = new Dictionary<string, string>();
+
+            string GetCtlValue(Control c) => c switch
+            {
+                CheckBox cb => cb.Checked.ToString(),
+                TrackBar tb => tb.Value.ToString(),
+                NumericUpDown n => n.Value.ToString(),
+                ComboBox cb => cb.SelectedItem?.ToString() ?? "",
+                TextBox t => t.Text,
+                _ => ""
+            };
+
+            void TrackField(string name, Control c)
+            {
+                _prevValues[name] = GetCtlValue(c);
+            }
+
+            void OnChanged(string fieldName, Control c)
+            {
+                if (_suppressDirty) return;
+                var newVal = GetCtlValue(c);
+                if (_prevValues.TryGetValue(fieldName, out var oldVal) && oldVal != newVal)
+                    LogConfig($"{fieldName}: \"{oldVal}\" → \"{newVal}\"");
+                _prevValues[fieldName] = newVal;
+                AutoSave();
+            }
+
+            void WireField(string name, Control c)
+            {
+                TrackField(name, c);
+                switch (c)
+                {
+                    case CheckBox cb:   cb.CheckedChanged += (_, _) => OnChanged(name, c); break;
+                    case TrackBar tb:   tb.ValueChanged   += (_, _) => OnChanged(name, c); break;
+                    case NumericUpDown n: n.ValueChanged   += (_, _) => OnChanged(name, c); break;
+                    case ComboBox cb:   cb.SelectedIndexChanged += (_, _) => OnChanged(name, c); break;
+                    case TextBox t:     t.TextChanged      += (_, _) => OnChanged(name, c); break;
+                }
+            }
+
+            WireField("AppTitle", txtTitle);
+            WireField("TopMost", chkTopMost);
+            WireField("Logging", chkLogging);
+            WireField("ToolsRoot", txtToolsRoot);
+            WireField("ImagesRoot", txtImagesRoot);
+            WireField("VideoBackground", txtVideoBackground);
+            WireField("MusicEnabled", chkMusicEnabled);
+            WireField("MusicRoot", txtMusicRoot);
+            WireField("Volume", trkVolume);
+            WireField("AudioDevice", cboAudioDevice);
+            WireField("DInputEnabled", chkDInputEnabled);
+            WireField("XInputEnabled", chkXInputEnabled);
+            WireField("BtnSelect", numDInputButtonSelect);
+            WireField("BtnBack", numDInputButtonBack);
+            WireField("BtnLeft", numDInputButtonLeft);
+            WireField("BtnRight", numDInputButtonRight);
+
+            // Toggle test panels and DInput button mapping controls based on checkbox state
+            void UpdateInputPanelState()
+            {
+                bool di = chkDInputEnabled.Checked;
+                grpDI.Enabled = di;
+                numDInputButtonSelect.Enabled = di;
+                numDInputButtonBack.Enabled = di;
+                numDInputButtonLeft.Enabled = di;
+                numDInputButtonRight.Enabled = di;
+                if (!di) StopDInputTest();
+
+                bool xi = chkXInputEnabled.Checked;
+                grpXI.Enabled = xi;
+                if (!xi) StopXInputTest();
+            }
+            chkDInputEnabled.CheckedChanged += (_, _) => UpdateInputPanelState();
+            chkXInputEnabled.CheckedChanged += (_, _) => UpdateInputPanelState();
+            gridOptions.CellValueChanged += (s, a) =>
+            {
+                if (!_suppressDirty)
+                {
+                    if (a.RowIndex >= 0 && a.ColumnIndex >= 0)
+                    {
+                        var colName = gridOptions.Columns[a.ColumnIndex].Name;
+                        var val = gridOptions.Rows[a.RowIndex].Cells[a.ColumnIndex].Value?.ToString() ?? "";
+                        LogConfig($"Grid[{a.RowIndex}].{colName} = \"{val}\"");
+                    }
+                    AutoSave();
+                }
+            };
+            gridOptions.RowsAdded += (s, a) => { if (!_suppressDirty) { LogConfig($"Row added (index {a.RowIndex})"); AutoSave(); } };
+            gridOptions.RowsRemoved += (s, a) => { if (!_suppressDirty) { LogConfig($"Row removed (index {a.RowIndex})"); AutoSave(); } };
+        }
+
+        private void PopulateAudioDevices()
+        {
+            cboAudioDevice.Items.Clear();
+            cboAudioDevice.Items.Add("(System Default)");
+
+            try
+            {
+                using var enumerator = new MMDeviceEnumerator();
+                MMDevice? defaultDevice = null;
+                try { defaultDevice = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia); } catch { }
+
+                var devices = enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active);
+                foreach (var dev in devices)
+                {
+                    var name = dev.FriendlyName;
+                    var isDefault = defaultDevice != null &&
+                                    string.Equals(dev.ID, defaultDevice.ID, StringComparison.OrdinalIgnoreCase);
+                    cboAudioDevice.Items.Add(isDefault ? name + " *" : name);
+                }
+            }
+            catch
+            {
+                // If enumeration fails, the user can still pick "(System Default)"
+            }
+
+            cboAudioDevice.SelectedIndex = 0;
         }
 
         private void LoadConfig()
@@ -477,15 +955,39 @@ namespace ArcadeShellConfigurator
             chkMusicEnabled.Checked = _config.Music.Enabled;
             txtMusicRoot.Text = _config.Music.MusicRoot ?? "";
             trkVolume.Value = Math.Clamp(_config.Music.Volume, 0, 100);
-            lblVolumeValue.Text = trkVolume.Value.ToString();
-            txtAudioDevice.Text = _config.Music.AudioDevice ?? "";
+            lblVolumeValue.Text = $"{trkVolume.Value}%";
+            // Select the matching audio device in the dropdown
+            var savedDevice = _config.Music.AudioDevice ?? "";
+            cboAudioDevice.SelectedIndex = 0; // default = system default
+            if (!string.IsNullOrWhiteSpace(savedDevice))
+            {
+                for (int i = 0; i < cboAudioDevice.Items.Count; i++)
+                {
+                    var item = cboAudioDevice.Items[i]?.ToString() ?? "";
+                    var cleanItem = item.EndsWith(" *") ? item[..^2] : item;
+                    if (string.Equals(cleanItem, savedDevice, StringComparison.OrdinalIgnoreCase))
+                    {
+                        cboAudioDevice.SelectedIndex = i;
+                        break;
+                    }
+                }
+            }
 
             // Input
+            chkXInputEnabled.Checked = _config.Input.XInputEnabled;
             chkDInputEnabled.Checked = _config.Input.DInputEnabled;
             numDInputButtonSelect.Value = Math.Clamp(_config.Input.DInputButtonSelect, 1, 32);
             numDInputButtonBack.Value   = Math.Clamp(_config.Input.DInputButtonBack,   1, 32);
             numDInputButtonLeft.Value   = Math.Clamp(_config.Input.DInputButtonLeft,   0, 32);
             numDInputButtonRight.Value  = Math.Clamp(_config.Input.DInputButtonRight,  0, 32);
+
+            // Sync test-panel enabled state with checkboxes
+            grpDI.Enabled = chkDInputEnabled.Checked;
+            numDInputButtonSelect.Enabled = chkDInputEnabled.Checked;
+            numDInputButtonBack.Enabled = chkDInputEnabled.Checked;
+            numDInputButtonLeft.Enabled = chkDInputEnabled.Checked;
+            numDInputButtonRight.Enabled = chkDInputEnabled.Checked;
+            grpXI.Enabled = chkXInputEnabled.Checked;
 
             // Options
             gridOptions.Rows.Clear();
@@ -512,8 +1014,12 @@ namespace ArcadeShellConfigurator
             _config.Music.Enabled = chkMusicEnabled.Checked;
             _config.Music.MusicRoot = txtMusicRoot.Text;
             _config.Music.Volume = trkVolume.Value;
-            _config.Music.AudioDevice = string.IsNullOrWhiteSpace(txtAudioDevice.Text) ? null : txtAudioDevice.Text;
+            var selectedDevice = cboAudioDevice.SelectedItem?.ToString() ?? "";
+            if (selectedDevice.EndsWith(" *")) selectedDevice = selectedDevice[..^2];
+            _config.Music.AudioDevice = (cboAudioDevice.SelectedIndex <= 0 || string.IsNullOrWhiteSpace(selectedDevice))
+                ? null : selectedDevice;
 
+            _config.Input.XInputEnabled      = chkXInputEnabled.Checked;
             _config.Input.DInputEnabled      = chkDInputEnabled.Checked;
             _config.Input.DInputButtonSelect = (int)numDInputButtonSelect.Value;
             _config.Input.DInputButtonBack   = (int)numDInputButtonBack.Value;
@@ -539,6 +1045,17 @@ namespace ArcadeShellConfigurator
             }
         }
 
+        private void LogConfig(string message)
+        {
+            if (string.IsNullOrEmpty(_logFilePath)) return;
+            try
+            {
+                var line = $"[{DateTime.Now:HH:mm:ss.fff}] [CONFIG] {message}{Environment.NewLine}";
+                File.AppendAllText(_logFilePath, line);
+            }
+            catch { }
+        }
+
         private void AutoSave()
         {
             CollectFromUI();
@@ -554,11 +1071,22 @@ namespace ArcadeShellConfigurator
                 var paths = _allConfigPaths.Count > 0 ? _allConfigPaths : new List<string> { _configPath };
                 foreach (var path in paths)
                     File.WriteAllText(path, json);
+
+                // Flash save confirmation in the status bar
+                lblStatusSave.Text = $"✓ Saved ({paths.Count} file{(paths.Count > 1 ? "s" : "")})";
+                var fadeTimer = new System.Windows.Forms.Timer { Interval = 2000 };
+                fadeTimer.Tick += (_, _) => { lblStatusSave.Text = ""; fadeTimer.Dispose(); };
+                fadeTimer.Start();
             }
             catch (Exception ex)
             {
+                lblStatusSave.Text = "✗ Save error";
+                lblStatusSave.ForeColor = Color.Red;
                 MessageBox.Show($"Error saving config:\n{ex.Message}", "Error",
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
+                var resetTimer = new System.Windows.Forms.Timer { Interval = 3000 };
+                resetTimer.Tick += (_, _) => { lblStatusSave.Text = ""; lblStatusSave.ForeColor = Color.ForestGreen; resetTimer.Dispose(); };
+                resetTimer.Start();
             }
         }
 
@@ -720,6 +1248,19 @@ namespace ArcadeShellConfigurator
             if (row.IsNewRow) return;
 
             var colName = gridOptions.Columns[e.ColumnIndex].Name;
+            if (colName == "DeleteRow")
+            {
+                var label = row.Cells["Label"].Value?.ToString() ?? "";
+                var msg = string.IsNullOrWhiteSpace(label)
+                    ? $"¿Eliminar la fila {e.RowIndex + 1}?"
+                    : $"¿Eliminar \"{label}\"?";
+                if (MessageBox.Show(msg, "Eliminar opción", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+                {
+                    gridOptions.Rows.RemoveAt(e.RowIndex);
+                    AutoSave();
+                }
+                return;
+            }
             if (colName == "BrowseExe")
             {
                 var exePath = row.Cells["Exe"].Value?.ToString();
@@ -1074,6 +1615,12 @@ namespace ArcadeShellConfigurator
                     };
                 }
                 lblTestAxes.Text = $"Eje X: {state.X,7} | Eje Y: {state.Y,7} | POV: {povText}";
+
+                // Update visual panel
+                float normX = (state.X - 32767f) / 32767f;
+                float normY = (state.Y - 32767f) / 32767f;
+                int povDeg = (pov != null && pov.Length > 0 && pov[0] != -1) ? pov[0] / 100 : -1;
+                visualDInput.UpdateDInput(normX, normY, povDeg, state.Buttons);
             }
             catch (SharpDX.SharpDXException)
             {
@@ -1091,6 +1638,7 @@ namespace ArcadeShellConfigurator
             _testJoystick = null;
             _testDInput?.Dispose();
             _testDInput = null;
+            visualDInput?.Reset();
         }
 
         private void BtnTestXInput_Click(object? sender, EventArgs e)
@@ -1144,6 +1692,7 @@ namespace ArcadeShellConfigurator
                 lblXInputStatus.Text  = "Activo: desconectado";
                 lblXInputButtons.Text = "Botones: \u2014";
                 lblXInputAxes.Text    = "LX: \u2014 | LY: \u2014 | LT: \u2014 | RT: \u2014";
+                visualXInput?.Reset();
                 return;
             }
 
@@ -1158,6 +1707,11 @@ namespace ArcadeShellConfigurator
 
             lblXInputAxes.Text =
                 $"LX: {gp.LeftThumbX,6} | LY: {gp.LeftThumbY,6} | LT: {gp.LeftTrigger,3} | RT: {gp.RightTrigger,3}";
+
+            // Update visual panel
+            float normX = gp.LeftThumbX / 32767f;
+            float normY = gp.LeftThumbY / 32767f;
+            visualXInput.UpdateXInput(normX, normY, gp.LeftTrigger, gp.RightTrigger, pressed);
         }
 
         private void StopXInputTest()
@@ -1165,13 +1719,196 @@ namespace ArcadeShellConfigurator
             _xinputTestTimer?.Stop();
             _xinputTestTimer?.Dispose();
             _xinputTestTimer = null;
+            visualXInput?.Reset();
         }
 
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
             StopDInputTest();
             StopXInputTest();
+            _logWatcher?.Dispose();
+            _logRefreshTimer?.Stop();
+            _logRefreshTimer?.Dispose();
             base.OnFormClosed(e);
+        }
+
+        // --- Log viewer ---
+
+        private void InitLogWatcher()
+        {
+            // Find debug.log next to the main app exe (in build output)
+            var solutionDir = Path.GetDirectoryName(_configPath) ?? ".";
+            var candidates = new[]
+            {
+                Path.Combine(solutionDir, "bin", "Release", "net10.0-windows", "debug.log"),
+                Path.Combine(solutionDir, "bin", "Debug", "net10.0-windows", "debug.log"),
+                Path.Combine(solutionDir, "debug.log"),
+            };
+            _logFilePath = candidates.FirstOrDefault(File.Exists) ?? candidates[0];
+
+            LoadLogFull();
+
+            // Watch for changes
+            var dir = Path.GetDirectoryName(_logFilePath);
+            if (dir != null && Directory.Exists(dir))
+            {
+                _logWatcher = new FileSystemWatcher(dir, "debug.log")
+                {
+                    NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size,
+                    EnableRaisingEvents = true,
+                };
+                // Coalesce rapid writes with a short timer
+                _logRefreshTimer = new System.Windows.Forms.Timer { Interval = 500 };
+                _logRefreshTimer.Tick += (_, _) =>
+                {
+                    _logRefreshTimer.Stop();
+                    AppendNewLogLines();
+                };
+                _logWatcher.Changed += (_, _) =>
+                {
+                    try { BeginInvoke(() => { _logRefreshTimer!.Stop(); _logRefreshTimer.Start(); }); }
+                    catch { }
+                };
+            }
+        }
+
+        private void LoadLogFull()
+        {
+            _logLastLength = 0;
+            if (!File.Exists(_logFilePath))
+            {
+                _logRawContent = "";
+                RefreshLogDisplay();
+                return;
+            }
+            try
+            {
+                using var fs = new FileStream(_logFilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                using var sr = new StreamReader(fs);
+                _logRawContent = sr.ReadToEnd();
+                _logLastLength = fs.Length;
+                RefreshLogDisplay();
+            }
+            catch (Exception ex)
+            {
+                _logRawContent = $"Error reading log: {ex.Message}";
+                RefreshLogDisplay();
+            }
+        }
+
+        private void AppendNewLogLines()
+        {
+            if (!File.Exists(_logFilePath)) return;
+            try
+            {
+                using var fs = new FileStream(_logFilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                if (fs.Length <= _logLastLength)
+                {
+                    if (fs.Length < _logLastLength) LoadLogFull();
+                    return;
+                }
+                fs.Seek(_logLastLength, SeekOrigin.Begin);
+                using var sr = new StreamReader(fs);
+                var newText = sr.ReadToEnd();
+                _logLastLength = fs.Length;
+                if (!string.IsNullOrEmpty(newText))
+                {
+                    _logRawContent += newText;
+                    RefreshLogDisplay();
+                }
+            }
+            catch { }
+        }
+
+        private int MeasureLogLineHeight()
+        {
+            // Put two lines in, measure the Y difference to get the real rendered line height
+            var oldText = txtLog.Text;
+            txtLog.Text = "A\nB";
+            int y0 = txtLog.GetPositionFromCharIndex(0).Y;
+            int y1 = txtLog.GetPositionFromCharIndex(2).Y; // char index of 'B'
+            txtLog.Text = oldText;
+            int h = y1 - y0;
+            return h > 0 ? h : 14;
+        }
+
+        private void RefreshLogDisplay()
+        {
+            if (txtLog == null || !txtLog.IsHandleCreated) return;
+            int clientH = txtLog.ClientSize.Height;
+            if (clientH <= 0) return; // tab not visible yet
+
+            int lineHeight = MeasureLogLineHeight();
+            int visibleLines = clientH / lineHeight;
+            int contentLines = string.IsNullOrEmpty(_logRawContent) ? 0 : _logRawContent.Split('\n').Length;
+            int padLines = Math.Max(0, visibleLines - contentLines + 1);
+            var fullText = (padLines > 0 ? new string('\n', padLines) : "") + _logRawContent;
+
+            txtLog.Text = fullText;
+            HighlightCategories(fullText);
+            ScrollLogToEnd();
+        }
+
+        private static readonly (string tag, Color bg)[] _logCategories =
+        {
+            ("[MUSIC]",    Color.FromArgb(180, 150, 0)),
+            ("[DInput]",   Color.FromArgb(40, 80, 180)),
+            ("[XInput]",   Color.FromArgb(0, 100, 200)),
+            ("[VIDEO]",    Color.FromArgb(140, 90, 20)),
+            ("[LAUNCH]",   Color.FromArgb(160, 60, 160)),
+            ("[SPECTRUM]", Color.FromArgb(100, 100, 100)),
+            ("[CONFIG]",   Color.FromArgb(180, 120, 0)),
+        };
+
+        private void HighlightCategories(string _)
+        {
+            txtLog.SuspendLayout();
+            var rtbText = txtLog.Text; // uses \r\n — matches RichTextBox indices
+            foreach (var (tag, bg) in _logCategories)
+            {
+                int idx = 0;
+                while ((idx = rtbText.IndexOf(tag, idx, StringComparison.OrdinalIgnoreCase)) >= 0)
+                {
+                    txtLog.Select(idx, tag.Length);
+                    txtLog.SelectionBackColor = bg;
+                    txtLog.SelectionColor = Color.White;
+                    idx += tag.Length;
+                }
+            }
+            txtLog.SelectionStart = txtLog.TextLength;
+            txtLog.SelectionLength = 0;
+            txtLog.ResumeLayout();
+        }
+
+        private const int WM_VSCROLL = 0x0115;
+        private const int SB_BOTTOM = 7;
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
+        private void ScrollLogToEnd()
+        {
+            SendMessage(txtLog.Handle, WM_VSCROLL, (IntPtr)SB_BOTTOM, IntPtr.Zero);
+        }
+
+        private void BtnLogClear_Click(object? sender, EventArgs e)
+        {
+            if (MessageBox.Show("¿Vaciar el archivo de log?", "Clear Log",
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                return;
+            try
+            {
+                if (File.Exists(_logFilePath))
+                    File.WriteAllText(_logFilePath, "");
+                _logRawContent = "";
+                _logLastLength = 0;
+                RefreshLogDisplay();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error clearing log:\n{ex.Message}", "Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         // --- Windows Shell thumbnail extraction (works for video, images, etc.) ---

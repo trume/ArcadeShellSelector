@@ -29,6 +29,8 @@ namespace ArcadeShellSelector
         private System.Windows.Forms.Timer? _dinputTimer;
         private bool[] _lastDInputButtons = Array.Empty<bool>();
         private DateTime _dinputAxisLastMove = DateTime.MinValue;
+        private bool _lastXInputStickLeft;
+        private bool _lastXInputStickRight;
         private readonly AppConfig config;
         private readonly List<(PictureBox Pic, Label Label, string ExePath, string? WaitForProcessName)> optionUis = new();
         private readonly Dictionary<PictureBox, Rectangle> _originalBounds = new();
@@ -88,12 +90,23 @@ namespace ArcadeShellSelector
             InitializeForm();
             InitializeControls();
 
-            // Initialize XInput
+            // Initialize XInput (only if enabled in config)
             xinputController = new Controller(UserIndex.One);
             xinputTimer = new System.Windows.Forms.Timer();
-            xinputTimer.Interval = 100; // Poll every 100ms
+            xinputTimer.Interval = 100;
             xinputTimer.Tick += XinputTimer_Tick;
-            xinputTimer.Start();
+            if (config.Input.XInputEnabled)
+            {
+                DebugLogger.Log("XInput", xinputController.IsConnected
+                    ? "Controller connected (UserIndex.One)"
+                    : "No controller connected");
+                xinputTimer.Start();
+                DebugLogger.Log("XInput", "Timer started.");
+            }
+            else
+            {
+                DebugLogger.Log("XInput", "Disabled in config.");
+            }
 
             InitDirectInput();
         }
@@ -104,13 +117,25 @@ namespace ArcadeShellSelector
                 return;
 
             var state = xinputController.GetState();
-            var buttons = state.Gamepad.Buttons;
+            var gp = state.Gamepad;
+            var buttons = gp.Buttons;
 
             // Navigation: DPad Left/Right
             if ((buttons & GamepadButtonFlags.DPadLeft) != 0 && (lastButtons & GamepadButtonFlags.DPadLeft) == 0)
                 MoveSelection(-1);
             if ((buttons & GamepadButtonFlags.DPadRight) != 0 && (lastButtons & GamepadButtonFlags.DPadRight) == 0)
                 MoveSelection(1);
+
+            // Navigation: Left stick with deadzone
+            const short stickDeadzone = 16000; // ~49% of 32767
+            bool stickLeft  = gp.LeftThumbX < -stickDeadzone;
+            bool stickRight = gp.LeftThumbX >  stickDeadzone;
+            bool wasStickLeft  = _lastXInputStickLeft;
+            bool wasStickRight = _lastXInputStickRight;
+            _lastXInputStickLeft  = stickLeft;
+            _lastXInputStickRight = stickRight;
+            if (stickLeft && !wasStickLeft)   MoveSelection(-1);
+            if (stickRight && !wasStickRight) MoveSelection(1);
 
             // Select: A button
             if ((buttons & GamepadButtonFlags.A) != 0 && (lastButtons & GamepadButtonFlags.A) == 0)

@@ -36,12 +36,6 @@
       "exe": "I:\\Emu\\Emulators\\Arnold\\arnold.exe",
       "image": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Img\\gnw_mario.png",
       "thumbVideo": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Video\\bloodwar.avi"
-    },
-    {
-      "label": "Nueva Opci\u00F3n",
-      "exe": "F:\\Player 3 MAX\\Player 3 MAX\\Player 3 MAX.exe",
-      "image": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Img\\no-media.png",
-      "thumbVideo": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Video\\Pokonyan! Balloon-01.mp4"
     }
   ],
   "music": {
@@ -49,7 +43,7 @@
     "musicRoot": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Music",
     "files": [],
     "volume": 100,
-    "audioDevice": "MX27UC (NVIDIA High Definition Audio)"
+    "audioDevice": "Altavoces (Realtek(R) Audio)"
   },
   "Autor": {
     "Quien": "2026.Trume76"
@@ -58,9 +52,10 @@
     "Activa": true
   },
   "input": {
+    "xinputEnabled": true,
     "dinputEnabled": true,
-    "dinputButtonSelect": 1,
-    "dinputButtonBack": 2,
+    "dinputButtonSelect": 3,
+    "dinputButtonBack": 1,
     "dinputButtonLeft": 0,
     "dinputButtonRight": 0
   }

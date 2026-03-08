@@ -51,6 +51,8 @@ namespace ArcadeShellSelector
                 _capture.DataAvailable += OnDataAvailable;
                 _capture.RecordingStopped += (_, __) => { };
                 _capture.StartRecording();
+                var wf = _capture.WaveFormat;
+                DebugLogger.Log("SPECTRUM", $"Loopback capture started: {wf.SampleRate}Hz, {wf.Channels}ch, {wf.BitsPerSample}bit, {wf.Encoding}");
             }
             catch (Exception ex)
             {
@@ -60,6 +62,7 @@ namespace ArcadeShellSelector
 
         public void Stop()
         {
+            DebugLogger.Log("SPECTRUM", "Stopping loopback capture.");
             try { _capture?.StopRecording(); } catch { }
         }
 

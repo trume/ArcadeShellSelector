@@ -132,6 +132,10 @@ namespace ArcadeShellSelector
 
     public sealed class InputConfig
     {
+        /// <summary>Enable XInput polling (Xbox / compatible gamepads)</summary>
+        [JsonPropertyName("xinputEnabled")]
+        public bool XInputEnabled { get; set; } = false;
+
         /// <summary>Enable DirectInput polling (for arcade encoders, Xin-Mo, etc.)</summary>
         [JsonPropertyName("dinputEnabled")]
         public bool DInputEnabled { get; set; } = true;
