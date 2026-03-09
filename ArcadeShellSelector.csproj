@@ -9,10 +9,10 @@
     <Platforms>AnyCPU;x64</Platforms>
     <DefaultItemExcludes>$(DefaultItemExcludes);ArcadeShellConfigurator\**</DefaultItemExcludes>
     <!-- Version: bump Major.Minor.Patch manually; Build auto-set by publish.ps1 via /p:BuildNumber -->
-    <Version>0.100.0</Version>
+    <Version>1.0.1</Version>
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
     <FileVersion>1.0.0.0</FileVersion>
-    <InformationalVersion>0.100.0</InformationalVersion>
+    <InformationalVersion>1.0.1</InformationalVersion>
   </PropertyGroup>
   <ItemGroup>
     <Content Include="config.json">
