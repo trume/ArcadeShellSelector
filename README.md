@@ -11,11 +11,12 @@ It includes a companion tool, ArcadeShellConfigurator, to edit `config.json` vis
 4. [Requirements](#requirements)
 5. [Build And Run](#build-and-run)
 6. [Deploy And Packaging](#deploy-and-packaging)
-7. [Configuration](#configuration)
-8. [Architecture](#architecture)
-9. [Project Structure](#project-structure)
-10. [Troubleshooting](#troubleshooting)
-11. [Repository Standards](#repository-standards)
+7. [Shell Replacement (Registry)](#shell-replacement-registry)
+8. [Configuration](#configuration)
+9. [Architecture](#architecture)
+10. [Project Structure](#project-structure)
+11. [Troubleshooting](#troubleshooting)
+12. [Repository Standards](#repository-standards)
 
 ## Overview
 
@@ -146,6 +147,52 @@ Packaging output:
 
 - Deploy folder: `deploy\ArcadeShell\`
 - Zip artifact: `deploy\ArcadeShell-v<version>-win-x64.zip`
+
+## Shell Replacement (Registry)
+
+To replace Windows Explorer with `ArcadeShellSelector.exe`, the shell value in Winlogon must point to your launcher executable.
+
+Important:
+
+- Use an absolute path to `ArcadeShellSelector.exe`.
+- Test with a non-admin/service account first.
+- Keep a recovery path available (safe mode, remote access, or admin account).
+
+### Mandatory registry value
+
+Set `Shell` under Winlogon:
+
+- Machine-wide: `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon`
+
+Command (run in elevated PowerShell):
+
+```powershell
+Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" -Name Shell -Value "C:\ArcadeShell\ArcadeShellSelector.exe"
+```
+
+### Backup before change
+
+```powershell
+reg export "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" "C:\ArcadeShell\winlogon-backup.reg" /y
+```
+
+### Rollback to default Explorer shell
+
+```powershell
+Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" -Name Shell -Value "explorer.exe"
+```
+
+### Optional per-user shell override
+
+If you want to scope shell replacement to a specific user profile, you can set the same value under:
+
+- `HKCU\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon`
+
+```powershell
+Set-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" -Name Shell -Value "C:\ArcadeShell\ArcadeShellSelector.exe"
+```
+
+Note: per-user shell behavior can vary by Windows policy and environment. For dedicated cabinets, machine-wide `HKLM` is the typical setup.
 
 ## Configuration
 
