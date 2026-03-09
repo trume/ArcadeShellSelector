@@ -131,10 +131,54 @@ jobs:
       run: |
         ./publish.ps1 -Version "${{ steps.version.outputs.new_version }}" -StripPdb
 
+    - name: Build human-readable release notes
+      shell: pwsh
+      run: |
+        $newTag = "v${{ steps.version.outputs.new_version }}"
+        $repoUrl = "${{ github.server_url }}/${{ github.repository }}"
+        $changelogUrl = "$repoUrl/blob/master/CHANGELOG.md"
+
+        $prevTag = git tag --sort=-creatordate | Where-Object { $_ -ne $newTag } | Select-Object -First 1
+        $compareUrl = if ($prevTag) { "$repoUrl/compare/$prevTag...$newTag" } else { "$repoUrl/releases/tag/$newTag" }
+
+        if ($prevTag) {
+          $commits = @(git log "$prevTag..HEAD" --pretty=format:"- %s" --no-merges)
+        } else {
+          $commits = @(git log --pretty=format:"- %s" --no-merges -n 20)
+        }
+
+        if (-not $commits -or $commits.Count -eq 0) {
+          $commits = @("- Maintenance and reliability improvements.")
+        }
+
+        if ($commits.Count -gt 20) {
+          $commits = $commits[0..19]
+        }
+
+        $commitText = $commits -join "`n"
+
+        $body = @"
+## Highlights
+
+This release includes reliability, packaging, and maintenance improvements for ArcadeShellSelector.
+
+## Human-Readable Changelog
+
+$commitText
+
+## Full Changelog
+
+- Full project changelog: [$changelogUrl]($changelogUrl)
+- Diff since last tag: [$compareUrl]($compareUrl)
+"@
+
+        $body | Out-File -FilePath "release-notes.md" -Encoding utf8
+
     - name: Create GitHub release
       uses: softprops/action-gh-release@v2
       with:
         tag_name: v${{ steps.version.outputs.new_version }}
         name: v${{ steps.version.outputs.new_version }}
         files: deploy/*.zip
+        body_path: release-notes.md
         generate_release_notes: true

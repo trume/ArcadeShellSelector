@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-03-09
+
+### Changed
+
+- Added a dedicated release workflow to automate version bump, tagging, packaging, and GitHub Release publishing.
+- Enabled automatic release workflow trigger on pushes to `master` with loop guards for bot-generated release commits.
+- Hardened release workflow push logic with `fetch + rebase + retry` to reduce non-fast-forward failures.
+- Fixed `publish.ps1` self-contained flow to restore/publish both projects with `win-x64` RID directly into deploy output.
+
+### Documentation
+
+- Rewrote README with structured features, build/deploy instructions, architecture overview, and repository standards.
+- Added mandatory Windows shell replacement registry instructions with backup and rollback commands.
+
 ## [0.99.0] — 2026-03-09
 
 ### Added
