@@ -1,144 +1,272 @@
-# ArcadeShellSelector & Configurator
+# ArcadeShellSelector
 
-## Features
+ArcadeShellSelector is a Windows arcade shell launcher built with .NET 10 and WinForms.
+It includes a companion tool, ArcadeShellConfigurator, to edit `config.json` visually.
 
-- ArcadeShellSelector (Main App):
-  - WinForms launcher for arcade frontends
-  - Video background playback (LibVLC)
-  - Music playback (NAudio/LibVLC)
-  - Spectrum analyzer overlay (click-through)
-  - Gamepad navigation (SharpDX.XInput)
-  - Option grid with per-row image, video thumbnail, and browse buttons
-  - Hover/select: plays thumb video preview in PictureBox (LibVLC software rendering)
-  - Logging toggle, launch button, config sync, app icon
-  - Dirty tracking for config changes
-  - Deploys video backgrounds and images to output folders
-  - Defaults button resets config to AppConfig defaults
-  - Author label and close button aligned on bottom line
-
-- ArcadeShellConfigurator (Config Editor):
-  - WinForms config editor for all app options
-  - Tabs: General, Paths, Music, App Options
-  - Option grid: label, exe, image, video thumb, browse buttons
-  - Video thumbnail extraction via Windows Shell API
-  - Video background thumbnail preview
-  - Multi-config sync: updates all config.json copies
-  - Save, Cancel, Reload, Defaults, Launch App buttons
-  - Dirty tracking for edits
-  - Output files auto-copied to main app bin directory after build
-
-## Build & Deploy
-
-- Both apps target net10.0-windows
-- All dependencies and output files are auto-copied for easy deployment
-- Configurator executable and dependencies are always available in main app bin directory
-
-## Troubleshooting
-
-- If Configurator does not launch, ensure all dependencies (.dll, .runtimeconfig.json, .deps.json, app.ico) are present
-- Main app and Configurator can be launched independently from bin/Release/net10.0-windows
-
-# Code Citations
-
-```markdown
-# ArcadeShellSelector — Architecture Documentation
-
-## Table of Contents
+## Table Of Contents
 
 1. [Overview](#overview)
-2. [Class Diagrams](#class-diagrams)
-3. [Sequence Diagrams](#sequence-diagrams)
-
----
+2. [Main Features](#main-features)
+3. [Technology Stack](#technology-stack)
+4. [Requirements](#requirements)
+5. [Build And Run](#build-and-run)
+6. [Deploy And Packaging](#deploy-and-packaging)
+7. [Configuration](#configuration)
+8. [Architecture](#architecture)
+9. [Project Structure](#project-structure)
+10. [Troubleshooting](#troubleshooting)
+11. [Repository Standards](#repository-standards)
 
 ## Overview
 
-**ArcadeShellSelector** is a WinForms arcade frontend launcher with video backgrounds, music playback, spectrum visualization, and gamepad navigation. **ArcadeShellConfigurator** is a companion config editor that parametrizes the launcher's settings via a shared `config.json`.
+The solution contains two desktop applications:
 
----
+- `ArcadeShellSelector`: full-screen launcher for arcade frontends and tools.
+- `ArcadeShellConfigurator`: GUI editor for launcher settings and app options.
 
-## Class Diagrams
+Core goals:
 
-### Config Model
+- Fast and controller-friendly arcade frontend selection.
+- Rich media presentation (video background, tracker music, thumbnail previews).
+- Easy operations with a dedicated configurator and one-command packaging script.
 
-```text
-┌──────────────────────────────────┐
-│         «sealed» AppConfig       │
-├──────────────────────────────────┤
-│ + Ui : UiConfig                  │
-│ + Paths : PathConfig             │
-│ + Options : List<OptionConfig>   │
-│ + Music : MusicConfig            │
-│ + Autor : AutorConfig            │
-│ + Activa : DebugConfig           │
-├──────────────────────────────────┤
-│ + «static» TryLoadFromFile(path) │
-│   → (AppConfig?, string?)        │
-└──────┬───────────────────────────┘
-       │ has-a (composition)
-       │
- ┌─────┼───────────────┬──────────────────┬──────────────────┐
- │     │               │                  │                  │
- ▼     ▼               ▼                  ▼                  ▼
-┌────────────┐ ┌─────────────┐ ┌──────────────────┐ ┌─────────────┐
-│  UiConfig  │ │ PathConfig  │ │  OptionConfig    │ │ MusicConfig │
-├────────────┤ ├─────────────┤ ├──────────────────┤ ├─────────────┤
-│Title       │ │ToolsRoot    │ │Label             │ │Enabled      │
-│TopMost     │ │ImagesRoot   │ │Exe               │ │MusicRoot?   │
-│MinImagePx  │ │NetworkWait  │ │Image             │ │Files?       │
-│ImgHtRatio  │ │VideoBackgrnd│ │ThumbVideo?       │ │Volume       │
-│ImgWdRatio  │ └─────────────┘ │WaitForProcess?   │ │AudioDevice? │
-└────────────┘                 └──────────────────┘ └─────────────┘
+## Main Features
 
-┌───────────────┐  ┌───────────────┐
-│  AutorConfig  │  │  DebugConfig  │
-├───────────────┤  ├───────────────┤
-│ Quien: string │  │ Activa: bool  │
-└───────────────┘  └───────────────┘
+### ArcadeShellSelector (main app)
+
+- WinForms full-screen launcher for configured app options.
+- Video background playback using LibVLC.
+- Tracker music playback (MOD/XM) with configurable volume and output device.
+- Real-time spectrum analyzer overlay using WASAPI loopback.
+- Gamepad support:
+  - XInput polling for Xbox-compatible controllers.
+  - DirectInput support for arcade encoders and joysticks.
+- Hover/select thumbnail video preview rendered via LibVLC software callbacks.
+- Optional logging for diagnostics.
+- Network path wait logic for UNC executable paths.
+- Shell-friendly behavior (starts `explorer.exe` on exit when needed).
+- Optional LedBlinky integration for arcade LED feedback.
+
+### ArcadeShellConfigurator (companion app)
+
+- Tabbed editor for all config sections:
+  - General
+  - Paths
+  - Music
+  - App Options
+- Editable option grid with browse helpers for executables and images.
+- Video thumbnail and background preview support.
+- Dirty tracking to avoid accidental loss of unsaved edits.
+- Multi-destination `config.json` synchronization.
+- Launch button to start the main launcher directly.
+
+## Technology Stack
+
+- .NET: `net10.0-windows`
+- UI: WinForms
+- Video: `LibVLCSharp`, `LibVLCSharp.WinForms`, `VideoLAN.LibVLC.Windows`
+- Audio: `NAudio`
+- Input: `SharpDX.XInput`, `SharpDX.DirectInput`
+
+## Requirements
+
+- Windows 10/11
+- .NET 10 SDK for development
+- PowerShell 7+ for deployment script (`publish.ps1`)
+
+Runtime requirements depend on packaging mode:
+
+- Framework-dependent package: target machine needs .NET 10 runtime.
+- Self-contained package: no preinstalled .NET runtime required.
+
+## Build And Run
+
+### Restore
+
+```powershell
+dotnet restore ArcadeShellSelector.sln
 ```
 
-### Main App — Runtime Components
+### Build (Debug)
+
+```powershell
+dotnet build ArcadeShellSelector.sln -c Debug
+```
+
+### Build (Release)
+
+```powershell
+dotnet build ArcadeShellSelector.sln -c Release
+```
+
+### Run
+
+Use Visual Studio, or run from output folders after build.
+
+- Main app output: `bin\<Configuration>\net10.0-windows\`
+- Configurator output is copied to the main app output by project targets.
+
+## Deploy And Packaging
+
+Use `publish.ps1` from repo root.
+
+### Framework-dependent package (default)
+
+```powershell
+pwsh .\publish.ps1
+```
+
+### Self-contained package
+
+```powershell
+pwsh .\publish.ps1 -SelfContained
+```
+
+### Useful options
+
+- Skip build and package existing artifacts:
+
+```powershell
+pwsh .\publish.ps1 -SkipBuild
+```
+
+- Strip `.pdb` symbols from deploy folder:
+
+```powershell
+pwsh .\publish.ps1 -StripPdb
+```
+
+- Set explicit package version:
+
+```powershell
+pwsh .\publish.ps1 -Version "1.0.0"
+```
+
+Packaging output:
+
+- Deploy folder: `deploy\ArcadeShell\`
+- Zip artifact: `deploy\ArcadeShell-v<version>-win-x64.zip`
+
+## Configuration
+
+Primary config file:
+
+- `config.json`
+
+Important sections (high-level):
+
+- UI settings (title, top-most, layout ratios)
+- Path settings (tools root, images root, video background, network wait)
+- Options list (label, exe, image, optional thumb video, wait behavior)
+- Music settings (enabled, root, file list, volume, audio device)
+- Debug/logging switch
+
+Recommended workflow:
+
+- Use ArcadeShellConfigurator for regular edits.
+- Keep paths valid and verify executable availability before deployment.
+
+## Architecture
+
+### High-level component view
 
 ```text
-┌──────────────────────────────────────────────────────────────────┐
-│              «partial» Launcher : Form                           │
-├──────────────────────────────────────────────────────────────────┤
-│ Fields                                                           │
-│  - config : AppConfig                                            │
-│  - optionUis : List<(PictureBox,Label,string,string?)>          │
-│  - selectedPic : PictureBox?                                     │
-│  - _childRunning : bool                                          │
-│  - xinputController : Controller                                 │
-│  - xinputTimer : Timer                                           │
-│  - _overlayForm, _spectrumForm : Form?                          │
-│  - _thumbLibVlc, _thumbPlayer, _thumbMedia (video preview)      │
-│  - _thumbBuffer, _thumbW, _thumbH (software rendering)          │
-│  - _originalBounds, _thumbVideoPaths, _thumbOriginalImages       │
-├──────────────────────────────────────────────────────────────────┤
-│ Lifecycle                                                        │
-│  + Launcher()  → load config, init form, init controls           │
-│  - MainForm_Load()  → start video, music, spectrum, layout       │
-│  - MainForm_Resize() → LayoutControls()                          │
-│  # OnFormClosed()  → dispose all media                           │
-├──────────────────────────────────────────────────────────────────┤
-│ Navigation                                                       │
-│  - MoveSelection(direction)                                      │
-│  - SelectCurrentOption() → OnOptionClickedAsync()                │
-│  - XinputTimer_Tick()  → poll gamepad, dispatch actions          │
-│  - MainForm_KeyDown()  → keyboard fallback                       │
-├──────────────────────────────────────────────────────────────────┤
-│ App Launch                                                       │
-│  - OnOptionClickedAsync(pic, exe, wait)                          │
-│  - RunSelectedApp(exe, wait?) → Process.Start + WaitForExit      │
-│  - EnsureExplorerRunning()                                       │
-├──────────────────────────────────────────────────────────────────┤
-│ Visual Effects                                                   │
-│  - ApplyZoom(pb, scale) / ResetZoom(pb)                          │
-│  - RefreshSelectionVisuals()                                     │
-│  - StartThumbVideo(pb) / StopThumbVideo(pb) (LibVLC software)   │
-│  - ThumbLockCb / ThumbDisplayCb  (video frame callbacks)         │
-│  - Pb_Paint()  (selection border)                                │
-│  - PicHoverEnter / PicHoverLeave                                 │
-├──────────────────────────────────────────────────────────────────┤
-│ Background                
-``
++-------------------------+      reads/writes      +----------------+
+| ArcadeShellConfigurator | <--------------------> |  config.json   |
++------------+------------+                        +--------+-------+
+             |                                              |
+             | launch app                                   | load at startup
+             v                                              v
++------------+----------------------------------------------+------------+
+|                         ArcadeShellSelector                            |
+|  - UI and app selection                                                |
+|  - Process launch and wait                                             |
+|  - Video background / thumbnail preview                                |
+|  - Music and spectrum analyzer                                         |
+|  - Controller input (XInput + DirectInput)                            |
++-----------+---------------------------+-------------------+------------+
+            |                           |                   |
+            v                           v                   v
+      +-----------+               +-----------+       +------------+
+      |  LibVLC   |               |  NAudio   |       |  SharpDX   |
+      +-----------+               +-----------+       +------------+
+```
+
+### Core runtime flow
+
+```text
+App start
+  -> Program.cs creates Launcher
+  -> Launcher loads AppConfig
+  -> UI layout and media services initialize
+  -> Input loop polls keyboard/gamepad
+  -> User selects option
+  -> Process starts (optional wait-for-exit)
+  -> On return, launcher state and media resume
+  -> App exit disposes media/input resources safely
+```
+
+### Key internal modules
+
+- `Launcher.cs`: primary UI lifecycle, selection logic, app launch flow.
+- `AppConfig.cs`: config model and file loading/validation.
+- `VideoBackground.cs`: background video management.
+- `MusicPlayer.cs`: tracker and audio playback logic.
+- `SpectrumAnalyzer.cs`, `SpectrumPanel.cs`: audio visualization.
+- `LibVlcManager.cs`: LibVLC lifecycle and shared concerns.
+- `LedBlinky.cs`: optional hardware LED integration.
+- `TrackerMetadata.cs`: tracker file metadata support.
+
+## Project Structure
+
+```text
+ArcadeShellSelector.sln
+|-- ArcadeShellSelector.csproj
+|-- ArcadeShellConfigurator/
+|   |-- ArcadeShellConfigurator.csproj
+|   |-- ConfigForm.cs
+|-- Program.cs
+|-- Launcher.cs
+|-- AppConfig.cs
+|-- MusicPlayer.cs
+|-- VideoBackground.cs
+|-- SpectrumAnalyzer.cs
+|-- SpectrumPanel.cs
+|-- LedBlinky.cs
+|-- TrackerMetadata.cs
+|-- config.json
+|-- publish.ps1
+|-- Media/
+|-- .github/
+```
+
+## Troubleshooting
+
+- Configurator does not launch:
+  - Verify `ArcadeShellConfigurator.exe`, `.dll`, `.runtimeconfig.json`, and `.deps.json` are present.
+- No video playback:
+  - Verify `libvlc\win-x64\libvlc.dll` exists in deployment output.
+- No music or spectrum:
+  - Verify music settings and selected audio output device.
+- App option fails to launch:
+  - Verify target executable path, permissions, and network availability (if UNC path).
+
+## Repository Standards
+
+Repository governance and collaboration files:
+
+- License: `LICENSE`
+- Changelog: `CHANGELOG.md`
+- Contributing guide: `CONTRIBUTING.md`
+- Security policy: `SECURITY.md`
+- Code of conduct: `CODE_OF_CONDUCT.md`
+- Issue templates: `.github/ISSUE_TEMPLATE/`
+- Pull request template: `.github/PULL_REQUEST_TEMPLATE.md`
+
+CI workflow:
+
+- `.github/workflows/dotnet-desktop.yml`
+
+Feature overview page:
+
+- `features.html`
