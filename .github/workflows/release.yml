@@ -1,6 +1,9 @@
 name: Release
 
 on:
+  push:
+    branches:
+      - master
   workflow_dispatch:
     inputs:
       bump:
@@ -22,7 +25,10 @@ concurrency:
 
 jobs:
   release:
+    if: ${{ github.event_name != 'push' || (github.actor != 'github-actions[bot]' && !startsWith(github.event.head_commit.message, 'chore(release): bump version to ')) }}
     runs-on: windows-latest
+    env:
+      BUMP_TYPE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.bump || 'patch' }}
 
     steps:
     - name: Checkout
@@ -61,7 +67,7 @@ jobs:
         $minor = [int]$parts[1]
         $patch = [int]$parts[2]
 
-        switch ("${{ github.event.inputs.bump }}") {
+        switch ("$env:BUMP_TYPE") {
           "major" { $major++; $minor = 0; $patch = 0 }
           "minor" { $minor++; $patch = 0 }
           default { $patch++ }
