@@ -1,4 +1,4 @@
-name: Build & Package
+name: CI Build
 
 on:
   push:
@@ -30,13 +30,9 @@ jobs:
     - name: Build (Release)
       run: dotnet build ArcadeShellSelector.sln -c Release --no-restore
 
-    - name: Package with publish.ps1
-      shell: pwsh
-      run: ./publish.ps1 -SkipBuild -StripPdb
-
-    - name: Upload deployment package
+    - name: Upload build output artifact
       uses: actions/upload-artifact@v4
       with:
-        name: ArcadeShell-release
-        path: deploy/*.zip
+        name: ArcadeShell-build-output
+        path: bin/Release/net10.0-windows/**
         if-no-files-found: warn

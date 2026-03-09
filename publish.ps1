@@ -95,12 +95,19 @@ if (-not (Test-Path $deployParent)) { New-Item -ItemType Directory -Force $deplo
 if (-not $SkipBuild) {
     Assert-DotNet
     if ($SelfContained) {
+        Write-Step "Restoring projects for self-contained win-x64"
+        dotnet restore $mainCsproj -r win-x64 --nologo
+        if ($LASTEXITCODE -ne 0) { Write-Error "dotnet restore failed for ArcadeShellSelector (win-x64)." }
+
+        dotnet restore $cfgCsproj -r win-x64 --nologo
+        if ($LASTEXITCODE -ne 0) { Write-Error "dotnet restore failed for ArcadeShellConfigurator (win-x64)." }
+
         Write-Step "Publishing ArcadeShellSelector (self-contained win-x64)"
-        dotnet publish $mainCsproj -p:PublishProfile=win-x64 -c Release --nologo
+        dotnet publish $mainCsproj -c Release -r win-x64 --self-contained --no-restore -o $deployDir --nologo
         if ($LASTEXITCODE -ne 0) { Write-Error "dotnet publish failed for ArcadeShellSelector." }
 
         Write-Step "Publishing ArcadeShellConfigurator (self-contained win-x64)"
-        dotnet publish $cfgCsproj -c Release -r win-x64 --self-contained -o $deployDir --nologo
+        dotnet publish $cfgCsproj -c Release -r win-x64 --self-contained --no-restore -o $deployDir --nologo
         if ($LASTEXITCODE -ne 0) { Write-Error "dotnet publish failed for ArcadeShellConfigurator." }
     } else {
         Write-Step "Building solution (Release, framework-dependent)"
