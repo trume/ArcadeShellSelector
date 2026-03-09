@@ -30,6 +30,12 @@ namespace ArcadeShellConfigurator
         private TextBox txtImagesRoot = null!;
         private TextBox txtVideoBackground = null!;
         private PictureBox picVideoThumb = null!;
+        private Panel pnlArcadeScreen = null!;
+        private Button btnStopVideo = null!;
+
+        // LEDBlinky
+        private CheckBox chkLedBlinkyEnabled = null!;
+        private TextBox txtLedBlinkyExe = null!;
 
         // Music tab
         private CheckBox chkMusicEnabled = null!;
@@ -37,6 +43,8 @@ namespace ArcadeShellConfigurator
         private TrackBar trkVolume = null!;
         private Label lblVolumeValue = null!;
         private ComboBox cboAudioDevice = null!;
+        private CheckBox chkPlayRandom = null!;
+        private ListBox lstMusicFiles = null!;
 
         // Options tab
         private DataGridView gridOptions = null!;
@@ -86,6 +94,17 @@ namespace ArcadeShellConfigurator
         private string _logFilePath = "";
         private string _logRawContent = "";
 
+        // Music preview
+        private LibVLCSharp.Shared.LibVLC? _previewLibVlc;
+        private LibVLCSharp.Shared.MediaPlayer? _previewPlayer;
+
+        // Video preview
+        private LibVLCSharp.Shared.MediaPlayer? _videoPreviewPlayer;
+        private bool _isVideoPlaying;
+        private System.Diagnostics.Stopwatch? _videoStartWatch;
+        private System.Windows.Forms.Timer? _videoPreviewTimer;
+        private Task<LibVLCSharp.Shared.LibVLC>? _vlcInitTask;
+
         public ConfigForm()
         {
             // Find ALL config.json files: walk up from the exe, and collect every one found.
@@ -118,9 +137,23 @@ namespace ArcadeShellConfigurator
                 }
             }
 
+            _vlcInitTask = Task.Run(() =>
+            {
+                LibVLCSharp.Shared.Core.Initialize();
+                return new LibVLCSharp.Shared.LibVLC(
+                    "--no-osd", "--no-snapshot-preview", "--no-stats",
+                    "--no-sub-autodetect-file", "--no-metadata-network-access");
+            });
+
             InitializeUI();
             LoadConfig();
-            Shown += (_, _) => { ScanDInputDevices(); ScanXInputSlots(); };
+            Shown += (_, _) =>
+            {
+                ScanDInputDevices();
+                ScanXInputSlots();
+                lblStatusSave.Text = "Initializing media engine…";
+                WarmUpVideoPreview();
+            };
         }
 
         private void InitializeUI()
@@ -228,8 +261,7 @@ namespace ArcadeShellConfigurator
             var grpVideo = new GroupBox
             {
                 Text = "Video Background",
-                Dock = DockStyle.Top,
-                Height = 100,
+                Dock = DockStyle.Fill,
                 Padding = new Padding(12, 8, 12, 8)
             };
             var lblVideo = new Label { Text = "Video File:", Location = new Point(16, 28), AutoSize = true };
@@ -238,41 +270,108 @@ namespace ArcadeShellConfigurator
             btnVideo.Click += (_, _) =>
             {
                 BrowseAndDeployVideo();
-                RefreshVideoThumb();
+                AutoPreviewVideo();
             };
-            txtVideoBackground.TextChanged += (_, _) => RefreshVideoThumb();
+            txtVideoBackground.TextChanged += (_, _) => AutoPreviewVideo();
             var lblVideoHint = new Label
             {
-                Text = "Video file played as background (copied to Bkg folder automatically)",
+                Text = "Video file played as background (copied to Media/Bkg folder automatically)",
                 Location = new Point(140, 52),
                 AutoSize = true,
                 ForeColor = SystemColors.GrayText,
                 Font = new Font(Font, FontStyle.Italic),
             };
+
             picVideoThumb = new PictureBox
             {
-                Size = new Size(80, 48),
+                Location = new Point(16, 72),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom,
                 SizeMode = PictureBoxSizeMode.Zoom,
-                BorderStyle = BorderStyle.FixedSingle,
-                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                BorderStyle = BorderStyle.None,
+                BackColor = Color.Transparent,
             };
 
-            grpVideo.Controls.AddRange(new Control[] { lblVideo, txtVideoBackground, btnVideo, lblVideoHint, picVideoThumb });
+            // Load arcade cabinet image
+            var cabinetPath = Path.Combine(Path.GetDirectoryName(_configPath) ?? ".", "Media", "Img", "Arcade.png");
+            if (File.Exists(cabinetPath))
+                picVideoThumb.Image = Image.FromFile(cabinetPath);
 
-            // Position video thumb, browse button, and textbox on layout
+            // Screen overlay panel — video plays here, positioned over the cabinet's monitor
+            pnlArcadeScreen = new Panel
+            {
+                BackColor = Color.Black,
+            };
+            picVideoThumb.Controls.Add(pnlArcadeScreen);
+            picVideoThumb.Resize += (_, _) => PositionArcadeScreen();
+
+            btnStopVideo = new Button
+            {
+                Text = "\u25A0 Stop",
+                Width = 70,
+                Height = 26,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(60, 60, 60),
+                ForeColor = Color.White,
+                Visible = false,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+            };
+            btnStopVideo.FlatAppearance.BorderColor = Color.Gray;
+            btnStopVideo.Click += (_, _) => StopVideoPreview();
+
+            grpVideo.Controls.AddRange(new Control[] { lblVideo, txtVideoBackground, btnVideo, lblVideoHint, picVideoThumb, btnStopVideo });
+
+            // Position browse button, textbox, and thumb on layout
             grpVideo.Layout += (_, _) =>
             {
                 int right = grpVideo.ClientSize.Width - 16;
-                picVideoThumb.Location = new Point(right - picVideoThumb.Width, 22);
-                btnVideo.Location = new Point(picVideoThumb.Left - btnVideo.Width - 6, 25);
+                btnVideo.Location = new Point(right - btnVideo.Width, 25);
                 txtVideoBackground.Width = btnVideo.Left - txtVideoBackground.Left - 6;
+                picVideoThumb.Width = right - picVideoThumb.Left;
+                picVideoThumb.Height = grpVideo.ClientSize.Height - picVideoThumb.Top - 12;
+                btnStopVideo.Location = new Point(right - btnStopVideo.Width, picVideoThumb.Top);
+                PositionArcadeScreen();
             };
 
             tabPaths.Controls.Add(grpVideo);
             tabPaths.Controls.Add(grpDirectories);
 
+            // === LEDBlinky group (on Directorios tab) ===
+            var grpLedBlinky = new GroupBox
+            {
+                Text = "LEDBlinky",
+                Dock = DockStyle.Top,
+                Height = 80,
+                Padding = new Padding(12, 8, 12, 8)
+            };
+            chkLedBlinkyEnabled = new CheckBox { Text = "LEDBlinky enabled", Location = new Point(16, 24), AutoSize = true };
+            var lblLedBlinkyExe = new Label { Text = "LEDBlinky.exe:", Location = new Point(16, 52), AutoSize = true };
+            txtLedBlinkyExe = new TextBox { Location = new Point(140, 49), Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right };
+            var btnLedBlinkyExe = new Button { Text = "...", Width = 30, Height = 23, Anchor = AnchorStyles.Top | AnchorStyles.Right };
+            btnLedBlinkyExe.Click += (_, _) =>
+            {
+                using var dlg = new OpenFileDialog
+                {
+                    Title = "Select LEDBlinky.exe",
+                    Filter = "Executable|LEDBlinky.exe|All files|*.*",
+                };
+                if (!string.IsNullOrWhiteSpace(txtLedBlinkyExe.Text))
+                    dlg.InitialDirectory = Path.GetDirectoryName(txtLedBlinkyExe.Text) ?? "";
+                if (dlg.ShowDialog() == DialogResult.OK)
+                    txtLedBlinkyExe.Text = dlg.FileName;
+            };
+            chkLedBlinkyEnabled.CheckedChanged += (_, _) => txtLedBlinkyExe.Enabled = chkLedBlinkyEnabled.Checked;
+
+            grpLedBlinky.Controls.AddRange(new Control[] { chkLedBlinkyEnabled, lblLedBlinkyExe, txtLedBlinkyExe, btnLedBlinkyExe });
+            grpLedBlinky.Layout += (_, _) =>
+            {
+                int right = grpLedBlinky.ClientSize.Width - 16;
+                btnLedBlinkyExe.Location = new Point(right - btnLedBlinkyExe.Width, 49);
+                txtLedBlinkyExe.Width = btnLedBlinkyExe.Left - txtLedBlinkyExe.Left - 6;
+            };
+            // LEDBlinky group is added to the Music tab below
+
             // === Music tab ===
-            var tabMusic = new TabPage("Musica") { Padding = new Padding(8) };
+            var tabMusic = new TabPage("Media/Led") { Padding = new Padding(8) };
 
             var grpPlayback = new GroupBox
             {
@@ -293,6 +392,80 @@ namespace ArcadeShellConfigurator
                 int right = grpPlayback.ClientSize.Width - 16;
                 btnMusicRoot.Location = new Point(right - btnMusicRoot.Width, 49);
                 txtMusicRoot.Width = btnMusicRoot.Left - txtMusicRoot.Left - 6;
+            };
+
+            // === Music Files group ===
+            var grpMusicFiles = new GroupBox
+            {
+                Text = "Music Files",
+                Dock = DockStyle.Fill,
+                Padding = new Padding(12, 8, 12, 8)
+            };
+            chkPlayRandom = new CheckBox { Text = "Play Random music", Location = new Point(16, 22), AutoSize = true, Checked = true };
+            lstMusicFiles = new ListBox
+            {
+                Location = new Point(16, 48),
+                IntegralHeight = false,
+            };
+            var txtMetaInfo = new RichTextBox
+            {
+                ReadOnly = true,
+                BackColor = Color.FromArgb(24, 24, 24),
+                ForeColor = Color.FromArgb(0, 200, 80),
+                Font = new Font("Consolas", 8.5f),
+                BorderStyle = BorderStyle.FixedSingle,
+                ScrollBars = RichTextBoxScrollBars.Vertical,
+                WordWrap = true,
+            };
+            var btnRefreshFiles = new Button
+            {
+                Text = "↻ Refresh",
+                Width = 80,
+                Height = 23,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+            };
+            var btnStopPreview = new Button
+            {
+                Text = "■ Stop",
+                Width = 60,
+                Height = 23,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+            };
+            btnStopPreview.Click += (_, _) => StopMusicPreview();
+            btnRefreshFiles.Click += (_, _) => RefreshMusicFileList();
+            chkPlayRandom.CheckedChanged += (_, _) => lstMusicFiles.Enabled = !chkPlayRandom.Checked;
+
+            // Preview + metadata on selection change
+            lstMusicFiles.SelectedIndexChanged += (_, _) =>
+            {
+                if (lstMusicFiles.SelectedItem is string fileName)
+                {
+                    var root = txtMusicRoot.Text;
+                    if (!string.IsNullOrWhiteSpace(root))
+                    {
+                        var fullPath = Path.IsPathRooted(root)
+                            ? Path.Combine(root, fileName)
+                            : Path.Combine(Path.GetDirectoryName(_configPath) ?? ".", root, fileName);
+                        if (File.Exists(fullPath))
+                        {
+                            PreviewMusicFile(fullPath);
+                            ShowTrackerMetadata(txtMetaInfo, fullPath);
+                        }
+                    }
+                }
+            };
+
+            grpMusicFiles.Controls.AddRange(new Control[] { chkPlayRandom, lstMusicFiles, txtMetaInfo, btnRefreshFiles, btnStopPreview });
+            grpMusicFiles.Layout += (_, _) =>
+            {
+                int right = grpMusicFiles.ClientSize.Width - 16;
+                int bottom = grpMusicFiles.ClientSize.Height - 12;
+                btnRefreshFiles.Location = new Point(right - btnRefreshFiles.Width, 19);
+                btnStopPreview.Location = new Point(btnRefreshFiles.Left - btnStopPreview.Width - 6, 19);
+                // Split horizontally: ListBox on left, metadata on right
+                int midX = 16 + (right - 16) / 2 - 4;
+                lstMusicFiles.SetBounds(16, 48, midX - 16, bottom - 48);
+                txtMetaInfo.SetBounds(midX + 4, 48, right - midX - 4, bottom - 48);
             };
 
             var grpAudio = new GroupBox
@@ -359,6 +532,8 @@ namespace ArcadeShellConfigurator
                 cboAudioDevice.Width = right - cboAudioDevice.Left;
             };
 
+            tabMusic.Controls.Add(grpMusicFiles);  // Dock.Fill — must be added first
+            tabMusic.Controls.Add(grpLedBlinky);
             tabMusic.Controls.Add(grpAudio);
             tabMusic.Controls.Add(grpPlayback);
 
@@ -719,9 +894,11 @@ namespace ArcadeShellConfigurator
             {
                 if (tabs.SelectedTab == tabLog)
                     BeginInvoke(RefreshLogDisplay);
+                if (tabs.SelectedTab == tabPaths && !_isVideoPlaying)
+                    AutoPreviewVideo();
                 btnClearLog.Enabled = tabs.SelectedTab == tabLog;
                 if (_btnDefaults != null)
-                    _btnDefaults.Enabled = tabs.SelectedIndex < 3; // General, Directorios, Musica
+                    _btnDefaults.Enabled = tabs.SelectedIndex < 3; // General, Directorios, Media/Led
             };
 
             Controls.Add(tabs);
@@ -914,6 +1091,243 @@ namespace ArcadeShellConfigurator
             cboAudioDevice.SelectedIndex = 0;
         }
 
+        private void RefreshMusicFileList()
+        {
+            lstMusicFiles.Items.Clear();
+            var root = txtMusicRoot.Text;
+            if (string.IsNullOrWhiteSpace(root)) return;
+
+            if (!Path.IsPathRooted(root))
+                root = Path.Combine(Path.GetDirectoryName(_configPath) ?? ".", root);
+
+            if (!Directory.Exists(root)) return;
+
+            var exts = new[] { ".ogg", ".mod", ".xm", ".mp3", ".wav", ".flac" };
+            foreach (var file in Directory.EnumerateFiles(root, "*.*", SearchOption.TopDirectoryOnly)
+                         .Where(f => exts.Contains(Path.GetExtension(f), StringComparer.OrdinalIgnoreCase))
+                         .OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
+            {
+                lstMusicFiles.Items.Add(Path.GetFileName(file));
+            }
+        }
+
+        private void PreviewMusicFile(string fullPath)
+        {
+            try
+            {
+                StopMusicPreview();
+
+                if (_previewLibVlc == null)
+                {
+                    LibVLCSharp.Shared.Core.Initialize();
+                    _previewLibVlc = new LibVLCSharp.Shared.LibVLC(
+                        "--no-osd", "--no-snapshot-preview", "--no-stats",
+                        "--no-sub-autodetect-file", "--no-metadata-network-access");
+                }
+
+                _previewPlayer = new LibVLCSharp.Shared.MediaPlayer(_previewLibVlc);
+                _previewPlayer.Volume = trkVolume.Value;
+
+                using var media = new LibVLCSharp.Shared.Media(_previewLibVlc, fullPath, LibVLCSharp.Shared.FromType.FromPath);
+                _previewPlayer.Play(media);
+            }
+            catch { }
+        }
+
+        private void StopMusicPreview()
+        {
+            try
+            {
+                if (_previewPlayer != null)
+                {
+                    _previewPlayer.Stop();
+                    _previewPlayer.Dispose();
+                    _previewPlayer = null;
+                }
+            }
+            catch { }
+        }
+
+        // --- Video preview ---
+
+        private void WarmUpVideoPreview()
+        {
+            Task.Run(async () =>
+            {
+                try
+                {
+                    var vlc = await _vlcInitTask!;
+                    BeginInvoke(() =>
+                    {
+                        _previewLibVlc = vlc;
+                        _videoPreviewPlayer = new LibVLCSharp.Shared.MediaPlayer(_previewLibVlc);
+                        _videoPreviewPlayer.Hwnd = pnlArcadeScreen.Handle;
+                        _videoPreviewPlayer.Mute = true;
+                        _videoPreviewPlayer.EndReached += (_, _) => BeginInvoke(StopVideoPreview);
+                        _videoPreviewPlayer.Playing += (_, _) =>
+                        {
+                            _videoStartWatch?.Stop();
+                            var ms = _videoStartWatch?.ElapsedMilliseconds ?? 0;
+                            BeginInvoke(() => lblStatusSave.Text = $"Video started in {ms} ms");
+                        };
+                        lblStatusSave.Text = "";
+                    });
+                }
+                catch { BeginInvoke(() => lblStatusSave.Text = ""); }
+            });
+        }
+
+        private void PositionArcadeScreen()
+        {
+            if (picVideoThumb.Image == null) return;
+            var img = picVideoThumb.Image;
+            // Calculate the rendered image rect inside Zoom mode
+            float scaleX = (float)picVideoThumb.Width / img.Width;
+            float scaleY = (float)picVideoThumb.Height / img.Height;
+            float scale = Math.Min(scaleX, scaleY);
+            int rw = (int)(img.Width * scale);
+            int rh = (int)(img.Height * scale);
+            int rx = (picVideoThumb.Width - rw) / 2;
+            int ry = (picVideoThumb.Height - rh) / 2;
+
+            // Screen area mapped from 1080x1080 cabinet PNG pixel coordinates
+            const float screenLeft = 0.295f;
+            const float screenTop = 0.170f;
+            const float screenWidth = 0.385f;
+            const float screenHeight = 0.220f;
+
+            pnlArcadeScreen.Location = new Point(
+                rx + (int)(rw * screenLeft),
+                ry + (int)(rh * screenTop));
+            pnlArcadeScreen.Size = new Size(
+                (int)(rw * screenWidth),
+                (int)(rh * screenHeight));
+        }
+
+        private void AutoPreviewVideo()
+        {
+            if (!IsHandleCreated) { RefreshVideoThumb(); return; }
+            StopVideoPreview();
+            var resolved = ResolveVideoPath(txtVideoBackground.Text);
+            if (resolved == null)
+            {
+                RefreshVideoThumb();
+                return;
+            }
+            StartVideoPreview(resolved);
+        }
+
+        private string? ResolveVideoPath(string videoPath)
+        {
+            var fullPath = videoPath;
+            if (!Path.IsPathRooted(fullPath))
+            {
+                var baseDir = Path.GetDirectoryName(_configPath) ?? ".";
+                var candidate = Path.Combine(baseDir, fullPath);
+                if (File.Exists(candidate)) fullPath = candidate;
+            }
+            return File.Exists(fullPath) ? fullPath : null;
+        }
+
+        private void StartVideoPreview(string fullPath)
+        {
+            try
+            {
+                if (_previewLibVlc == null)
+                {
+                    LibVLCSharp.Shared.Core.Initialize();
+                    _previewLibVlc = new LibVLCSharp.Shared.LibVLC(
+                        "--no-osd", "--no-snapshot-preview", "--no-stats",
+                        "--no-sub-autodetect-file", "--no-metadata-network-access");
+                }
+
+                _videoStartWatch = System.Diagnostics.Stopwatch.StartNew();
+
+                if (_videoPreviewPlayer == null)
+                {
+                    _videoPreviewPlayer = new LibVLCSharp.Shared.MediaPlayer(_previewLibVlc);
+                    _videoPreviewPlayer.Hwnd = pnlArcadeScreen.Handle;
+                    _videoPreviewPlayer.Mute = true;
+                    _videoPreviewPlayer.EndReached += (_, _) => BeginInvoke(StopVideoPreview);
+                    _videoPreviewPlayer.Playing += (_, _) =>
+                    {
+                        _videoStartWatch?.Stop();
+                        var ms = _videoStartWatch?.ElapsedMilliseconds ?? 0;
+                        BeginInvoke(() => lblStatusSave.Text = $"Video started in {ms} ms");
+                    };
+                }
+                else
+                {
+                    _videoPreviewPlayer.Stop();
+                }
+
+                using var media = new LibVLCSharp.Shared.Media(_previewLibVlc, fullPath, LibVLCSharp.Shared.FromType.FromPath);
+                pnlArcadeScreen.BackgroundImage = null;
+                _videoPreviewPlayer.Play(media);
+                _isVideoPlaying = true;
+                btnStopVideo.Visible = true;
+                btnStopVideo.BringToFront();
+
+                // Auto-stop after 10 seconds
+                _videoPreviewTimer?.Stop();
+                _videoPreviewTimer?.Dispose();
+                _videoPreviewTimer = new System.Windows.Forms.Timer { Interval = 10_000 };
+                _videoPreviewTimer.Tick += (_, _) => { _videoPreviewTimer?.Stop(); StopVideoPreview(); };
+                _videoPreviewTimer.Start();
+            }
+            catch { }
+        }
+
+        private void StopVideoPreview()
+        {
+            try
+            {
+                _videoPreviewPlayer?.Stop();
+            }
+            catch { }
+            _isVideoPlaying = false;
+            _videoPreviewTimer?.Stop();
+            _videoPreviewTimer?.Dispose();
+            _videoPreviewTimer = null;
+            btnStopVideo.Visible = false;
+            RefreshVideoThumb();
+        }
+
+        private void ShowTrackerMetadata(RichTextBox rtb, string filePath)
+        {
+            rtb.Clear();
+            var meta = TrackerMetadata.TryRead(filePath);
+            if (meta == null)
+            {
+                rtb.Text = Path.GetFileName(filePath);
+                return;
+            }
+
+            rtb.SelectionFont = new Font(rtb.Font, FontStyle.Bold);
+            rtb.SelectionColor = Color.FromArgb(100, 220, 255);
+            rtb.AppendText(meta.Title + Environment.NewLine);
+
+            rtb.SelectionFont = rtb.Font;
+            rtb.SelectionColor = Color.FromArgb(180, 180, 180);
+            rtb.AppendText($"Format: {meta.Format}   Channels: {meta.Channels}" + Environment.NewLine);
+            rtb.AppendText($"Patterns: {meta.Patterns}   BPM: {meta.Bpm}   Tempo: {meta.Tempo}" + Environment.NewLine);
+            if (meta.Tracker != null)
+                rtb.AppendText($"Tracker: {meta.Tracker}" + Environment.NewLine);
+
+            if (meta.SampleNames.Count > 0)
+            {
+                rtb.AppendText(Environment.NewLine);
+                rtb.SelectionFont = new Font(rtb.Font, FontStyle.Bold);
+                rtb.SelectionColor = Color.FromArgb(255, 200, 80);
+                rtb.AppendText("Samples / Instruments:" + Environment.NewLine);
+
+                rtb.SelectionFont = rtb.Font;
+                rtb.SelectionColor = Color.FromArgb(0, 200, 80);
+                foreach (var name in meta.SampleNames)
+                    rtb.AppendText("  " + name + Environment.NewLine);
+            }
+        }
+
         private void LoadConfig()
         {
             if (!File.Exists(_configPath))
@@ -956,6 +1370,15 @@ namespace ArcadeShellConfigurator
             txtMusicRoot.Text = _config.Music.MusicRoot ?? "";
             trkVolume.Value = Math.Clamp(_config.Music.Volume, 0, 100);
             lblVolumeValue.Text = $"{trkVolume.Value}%";
+            chkPlayRandom.Checked = _config.Music.PlayRandom;
+            lstMusicFiles.Enabled = !chkPlayRandom.Checked;
+            RefreshMusicFileList();
+            // Select the saved file in the list
+            if (!string.IsNullOrWhiteSpace(_config.Music.SelectedFile))
+            {
+                var idx = lstMusicFiles.Items.IndexOf(_config.Music.SelectedFile);
+                if (idx >= 0) lstMusicFiles.SelectedIndex = idx;
+            }
             // Select the matching audio device in the dropdown
             var savedDevice = _config.Music.AudioDevice ?? "";
             cboAudioDevice.SelectedIndex = 0; // default = system default
@@ -976,6 +1399,11 @@ namespace ArcadeShellConfigurator
             // Input
             chkXInputEnabled.Checked = _config.Input.XInputEnabled;
             chkDInputEnabled.Checked = _config.Input.DInputEnabled;
+
+            // LEDBlinky
+            chkLedBlinkyEnabled.Checked = _config.LedBlinky.Enabled;
+            txtLedBlinkyExe.Text = _config.LedBlinky.ExePath;
+            txtLedBlinkyExe.Enabled = chkLedBlinkyEnabled.Checked;
             numDInputButtonSelect.Value = Math.Clamp(_config.Input.DInputButtonSelect, 1, 32);
             numDInputButtonBack.Value   = Math.Clamp(_config.Input.DInputButtonBack,   1, 32);
             numDInputButtonLeft.Value   = Math.Clamp(_config.Input.DInputButtonLeft,   0, 32);
@@ -1014,6 +1442,8 @@ namespace ArcadeShellConfigurator
             _config.Music.Enabled = chkMusicEnabled.Checked;
             _config.Music.MusicRoot = txtMusicRoot.Text;
             _config.Music.Volume = trkVolume.Value;
+            _config.Music.PlayRandom = chkPlayRandom.Checked;
+            _config.Music.SelectedFile = lstMusicFiles.SelectedItem as string;
             var selectedDevice = cboAudioDevice.SelectedItem?.ToString() ?? "";
             if (selectedDevice.EndsWith(" *")) selectedDevice = selectedDevice[..^2];
             _config.Music.AudioDevice = (cboAudioDevice.SelectedIndex <= 0 || string.IsNullOrWhiteSpace(selectedDevice))
@@ -1025,6 +1455,9 @@ namespace ArcadeShellConfigurator
             _config.Input.DInputButtonBack   = (int)numDInputButtonBack.Value;
             _config.Input.DInputButtonLeft   = (int)numDInputButtonLeft.Value;
             _config.Input.DInputButtonRight  = (int)numDInputButtonRight.Value;
+
+            _config.LedBlinky.Enabled = chkLedBlinkyEnabled.Checked;
+            _config.LedBlinky.ExePath = txtLedBlinkyExe.Text;
 
             _config.Options.Clear();
             foreach (DataGridViewRow row in gridOptions.Rows)
@@ -1209,11 +1642,11 @@ namespace ArcadeShellConfigurator
 
             // Resolve the Bkg folder next to the solution root (where config.json lives)
             var solutionDir = Path.GetDirectoryName(_configPath) ?? ".";
-            var bkgDir = Path.Combine(solutionDir, "Bkg");
+            var bkgDir = Path.Combine(solutionDir, "Media", "Bkg");
             try { Directory.CreateDirectory(bkgDir); } catch { }
 
             // Also deploy to the main app's output Bkg folder
-            var binBkgDir = Path.Combine(solutionDir, "bin", "Release", "net10.0-windows", "Bkg");
+            var binBkgDir = Path.Combine(solutionDir, "bin", "Release", "net10.0-windows", "Media", "Bkg");
             try { Directory.CreateDirectory(binBkgDir); } catch { }
 
             // Remove existing video files from both Bkg folders
@@ -1445,7 +1878,10 @@ namespace ArcadeShellConfigurator
 
         private void RefreshVideoThumb()
         {
-            picVideoThumb.Image = LoadVideoThumbnail(txtVideoBackground.Text);
+            // Show thumbnail in the arcade screen panel via a background image
+            var thumb = LoadVideoThumbnail(txtVideoBackground.Text);
+            pnlArcadeScreen.BackgroundImage = thumb;
+            pnlArcadeScreen.BackgroundImageLayout = ImageLayout.Zoom;
         }
 
         private void ScanDInputDevices()
@@ -1724,6 +2160,10 @@ namespace ArcadeShellConfigurator
 
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
+            StopVideoPreview();
+            StopMusicPreview();
+            try { _videoPreviewPlayer?.Dispose(); } catch { }
+            try { _previewLibVlc?.Dispose(); } catch { }
             StopDInputTest();
             StopXInputTest();
             _logWatcher?.Dispose();

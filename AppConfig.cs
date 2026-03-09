@@ -30,6 +30,9 @@ namespace ArcadeShellSelector
         [JsonPropertyName("input")]
         public InputConfig Input { get; set; } = new();
 
+        [JsonPropertyName("ledblinky")]
+        public LedBlinkyConfig LedBlinky { get; set; } = new();
+
         public static (AppConfig? cfg, string? err) TryLoadFromFile(string path)
         {
             try
@@ -110,6 +113,12 @@ namespace ArcadeShellSelector
         [JsonPropertyName("files")]
         public List<string>? Files { get; set; }
 
+        [JsonPropertyName("playRandom")]
+        public bool PlayRandom { get; set; } = true;
+
+        [JsonPropertyName("selectedFile")]
+        public string? SelectedFile { get; set; }
+
         [JsonPropertyName("volume")]
         public int Volume { get; set; } = 100;
 
@@ -155,6 +164,15 @@ namespace ArcadeShellSelector
         /// <summary>1-based button number for "move right". 0 = use joystick axis / POV hat.</summary>
         [JsonPropertyName("dinputButtonRight")]
         public int DInputButtonRight { get; set; } = 0;
+    }
+
+    public sealed class LedBlinkyConfig
+    {
+        [JsonPropertyName("enabled")]
+        public bool Enabled { get; set; } = false;
+
+        [JsonPropertyName("exePath")]
+        public string ExePath { get; set; } = string.Empty;
     }
 }
 

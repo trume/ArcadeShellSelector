@@ -1,0 +1,46 @@
+# Auto-detect text files and normalise line endings to LF in the repo
+* text=auto
+
+# Source code — always LF in repo, native on checkout
+*.cs        text diff=csharp
+*.csproj    text diff
+*.props     text diff
+*.targets   text diff
+*.sln       text eol=crlf
+*.json      text
+*.xml       text
+*.yml       text
+*.yaml      text
+*.md        text diff=markdown
+*.html      text diff=html
+*.ps1       text eol=crlf
+*.psm1      text eol=crlf
+*.cmd       text eol=crlf
+*.bat       text eol=crlf
+
+# Config
+*.editorconfig text
+*.gitignore    text
+*.gitattributes text
+
+# Binary — no diff, no line-ending conversion
+*.ico       binary
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.bmp       binary
+*.mp4       binary
+*.avi       binary
+*.mkv       binary
+*.wmv       binary
+*.exe       binary
+*.dll       binary
+*.pdb       binary
+*.zip       binary
+
+# Tracker music modules — binary
+*.mod       binary
+*.xm        binary
+*.s3m       binary
+*.it        binary

@@ -7,11 +7,16 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationIcon>..\app.ico</ApplicationIcon>
+    <!-- Output into the main app's bin folder so we share libvlc, lib, Media, config.json -->
+    <OutputPath>..\bin\$(Configuration)\$(TargetFramework)</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
   </PropertyGroup>
 
   <!-- Share AppConfig.cs from the main project -->
   <ItemGroup>
     <Compile Include="..\AppConfig.cs" Link="AppConfig.cs" />
+    <Compile Include="..\LibVlcManager.cs" Link="LibVlcManager.cs" />
+    <Compile Include="..\TrackerMetadata.cs" Link="TrackerMetadata.cs" />
   </ItemGroup>
 
   <!-- Copy app.ico to output so the form can load it at runtime -->

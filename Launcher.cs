@@ -48,6 +48,7 @@ namespace ArcadeShellSelector
         private SpectrumAnalyzer? spectrumAnalyzer;
         private SpectrumPanel? spectrumPanel;
         private Form? _spectrumForm;
+        private LedBlinky? _ledBlinky;
         private Button closeButton = null!;
         private Label titleLabel = null!;
         private Label AutorApp = null!;
@@ -69,23 +70,6 @@ namespace ArcadeShellSelector
             }
             config = cfg;
             DebugLogger.Init(config.Activa.Activa);
-            // Initialize music (random track from Music folder) if enabled in config.
-            try
-            {
-                if (config.Music != null && config.Music.Enabled)
-                {
-                    var mp = new MusicPlayer(AppContext.BaseDirectory, config.Music);
-                    if (mp.HasTracks)
-                    {
-                        musicPlayer = mp;
-                    }
-                    else
-                    {
-                        mp.Dispose();
-                    }
-                }
-            }
-            catch { }
 
             InitializeForm();
             InitializeControls();
@@ -585,14 +569,42 @@ namespace ArcadeShellSelector
 
             _zOrderTimer?.Start();
 
+            // 1. Video background — visual feedback first
             TryStartBackground();
-            try { musicPlayer?.Start(); } catch { }
 
-            // Start spectrum analyzer after music
+            // 2. Music — initialize and start playback
+            try
+            {
+                if (config.Music != null && config.Music.Enabled)
+                {
+                    var mp = new MusicPlayer(AppContext.BaseDirectory, config.Music);
+                    if (mp.HasTracks)
+                    {
+                        musicPlayer = mp;
+                        musicPlayer.Start();
+                    }
+                    else
+                    {
+                        mp.Dispose();
+                    }
+                }
+            }
+            catch { }
+
+            // 3. Spectrum analyzer — depends on audio playing
             try
             {
                 spectrumAnalyzer?.Start();
                 spectrumPanel?.StartRefresh();
+            }
+            catch { }
+
+            // 4. LEDBlinky — signal front-end start + animation
+            try
+            {
+                _ledBlinky = new LedBlinky(config.LedBlinky);
+                _ledBlinky.FrontEndStart();
+                _ledBlinky.StartAnimation();
             }
             catch { }
 
@@ -759,6 +771,9 @@ namespace ArcadeShellSelector
                 try { videoBackground?.Pause(); } catch { }
             });
 
+            // Signal LEDBlinky: game starting
+            try { _ledBlinky?.GameStart(); } catch { }
+
             // minimize launcher
             try { WindowState = FormWindowState.Minimized; } catch { }
 
@@ -804,6 +819,9 @@ namespace ArcadeShellSelector
             // Restart spectrum
             try { spectrumAnalyzer?.Start(); } catch { }
             try { spectrumPanel?.StartRefresh(); } catch { }
+
+            // Signal LEDBlinky: back to animation / attract mode
+            try { _ledBlinky?.StartAnimation(); } catch { }
 
             foreach (var (pic, _, _, _) in optionUis)
                 pic.Enabled = true;
@@ -1179,6 +1197,9 @@ namespace ArcadeShellSelector
 
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
+            // Signal LEDBlinky: front-end quitting
+            try { _ledBlinky?.FrontEndQuit(); } catch { }
+
             // cancel any pending music diagnostic task
             try { _musicDiagCts?.Cancel(); } catch { }
 

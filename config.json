@@ -10,7 +10,7 @@
     "toolsRoot": "F:\\",
     "imagesRoot": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Img",
     "networkWaitSeconds": 15,
-    "videoBackground": "C:\\Users\\trume76\\ArcadeShellSelector\\Bkg\\Background.mp4"
+    "videoBackground": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Bkg\\Background.mp4"
   },
   "options": [
     {
@@ -42,6 +42,8 @@
     "enabled": true,
     "musicRoot": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Music",
     "files": [],
+    "playRandom": false,
+    "selectedFile": "ELYSIUM.MOD",
     "volume": 100,
     "audioDevice": "Altavoces (Realtek(R) Audio)"
   },
@@ -58,5 +60,9 @@
     "dinputButtonBack": 1,
     "dinputButtonLeft": 0,
     "dinputButtonRight": 0
+  },
+  "ledblinky": {
+    "enabled": true,
+    "exePath": ""
   }
 }

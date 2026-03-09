@@ -24,6 +24,8 @@ namespace ArcadeShellSelector
         private string? _lastError;
         private readonly string? _audioDevice;
         private readonly int _configuredVolume;
+        private readonly bool _playRandom;
+        private readonly string? _selectedFile;
 
         private void LogDebug(string msg) => DebugLogger.Log("MUSIC", msg);
 
@@ -71,7 +73,7 @@ namespace ArcadeShellSelector
                 try { PlayCurrent(); } catch { }
             };
             _mediaPlayer.EncounteredError += (_, __) => { _lastError = "Playback encountered an error."; try { LogDebug("Player event: EncounteredError"); } catch { } };
-            _mediaPlayer.Playing += (_, __) => { _lastError = null; try { LogDebug("Player event: Playing"); LogAudioInfo(); } catch { } };
+            _mediaPlayer.Playing += (_, __) => { _lastError = null; try { LogDebug("Player event: Playing"); } catch { } };
             _mediaPlayer.Paused += (_, __) => { try { LogDebug("Player event: Paused"); } catch { } };
             _mediaPlayer.Buffering += (_, a) => { try { LogDebug($"Player event: Buffering {a}%"); } catch { } };
 
@@ -87,9 +89,12 @@ namespace ArcadeShellSelector
             // preferred audio device (optional)
             _audioDevice = string.IsNullOrWhiteSpace(musicConfig.AudioDevice) ? null : musicConfig.AudioDevice;
 
+            // playback mode
+            _playRandom = musicConfig.PlayRandom;
+            _selectedFile = musicConfig.SelectedFile;
+
             // log discovered tracks
             try { LogDebug($"MusicPlayer initialized; tracks={_tracks.Count}"); } catch { }
-            try { LogAudioInfo(); } catch { }
 
             // We'll set audio output/device via media options when playing.
         }
@@ -102,10 +107,19 @@ namespace ArcadeShellSelector
             {
                 if (_disposed) return;
 
-                // Pick a random track each time Start is called (i.e., app start)
-                var rnd = new Random();
-                var idx = rnd.Next(0, _tracks.Count);
-                var path = _tracks[idx];
+                string path;
+                if (!_playRandom && !string.IsNullOrWhiteSpace(_selectedFile))
+                {
+                    // Try to find the selected file in the track list
+                    path = _tracks.FirstOrDefault(t =>
+                        string.Equals(Path.GetFileName(t), _selectedFile, StringComparison.OrdinalIgnoreCase))
+                        ?? _tracks[new Random().Next(0, _tracks.Count)];
+                }
+                else
+                {
+                    path = _tracks[new Random().Next(0, _tracks.Count)];
+                }
+
                 try { LogDebug($"Start selected track: {path}"); } catch { }
                 PlayPath(path);
             }
