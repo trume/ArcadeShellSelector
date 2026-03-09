@@ -91,10 +91,28 @@ jobs:
         git add ArcadeShellSelector.csproj
         git commit -m "chore(release): bump version to ${{ steps.version.outputs.new_version }}"
 
-    - name: Push version bump to master
+    - name: Push version bump to master (rebase + retry)
       shell: pwsh
       run: |
-        git push origin HEAD:master
+        git fetch origin
+        git rebase origin/master
+
+        $ok = $false
+        for ($i = 0; $i -lt 3 -and -not $ok; $i++) {
+          git push origin HEAD:master
+          if ($LASTEXITCODE -eq 0) {
+            $ok = $true
+            break
+          }
+
+          Start-Sleep -Seconds 2
+          git fetch origin
+          git rebase origin/master
+        }
+
+        if (-not $ok) {
+          throw "Failed to push version bump after retries."
+        }
 
     - name: Create and push release tag
       shell: pwsh
