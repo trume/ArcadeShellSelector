@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-03-10
+
+### Added
+- **Right stick test visualizer** — XInput test panel now shows an **R STICK** circle alongside the existing L STICK, polling `RightThumbX/Y` in real time. Axes status label extended to `LX | LY | RX | RY | LT | RT`.
+- **Button assignment flash** — Both DInput and XInput binding labels flash bright neon green `(50, 255, 100)` for 700 ms when a button is successfully captured, giving instant visual confirmation.
+
+### Changed
+- **XInput test panel layout** — Sticks and trigger bars are now in a top strip; button pill-tags occupy the full panel width below a separator line, preventing overflow when many buttons are held simultaneously.
+- **Audio Output frame order** — "Audio Device" combo is now the first control in the Audio Output group box (above Volume and Thumb Video Volume sliders).
+
+### Fixed
+- **Music metadata not shown on startup** — When "Play Random" is unchecked, the metadata panel for the saved music file now populates immediately when the configurator opens. Previously the `_suppressDirty` guard silently skipped the metadata call during config load.
+
 ## [1.0.1] - 2026-03-09
 
 ### Changed
