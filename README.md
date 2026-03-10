@@ -35,6 +35,8 @@ Core goals:
 
 ### ArcadeShellSelector (main app)
 
+- Full-screen terminal boot animation (`BootSplash`) with CRT effects (scanlines, phosphor tint, vignette), typed line-by-line sequence populated with real system and config data, randomised timing pauses, 11-second cursor pre-phase with looped HDD sound via NAudio, and instant skip on keypress.
+- Seamless transition from boot splash to launcher — no visible desktop gap.
 - WinForms full-screen launcher for configured app options.
 - Video background playback using LibVLC.
 - Tracker music playback (MOD/XM) with configurable volume and output device.
@@ -43,23 +45,30 @@ Core goals:
   - XInput polling for Xbox-compatible controllers.
   - DirectInput support for arcade encoders and joysticks.
 - Hover/select thumbnail video preview rendered via LibVLC software callbacks.
-- Optional logging for diagnostics.
+- Optional debug logging for diagnostics.
 - Network path wait logic for UNC executable paths.
 - Shell-friendly behavior (starts `explorer.exe` on exit when needed).
 - Optional LedBlinky integration for arcade LED feedback.
+- `lib\` assembly probing via `[ModuleInitializer]` + `AssemblyLoadContext` (resilient on .NET 10).
 
 ### ArcadeShellConfigurator (companion app)
 
 - Tabbed editor for all config sections:
   - General
-  - Paths
-  - Music
-  - App Options
+  - Directorios (paths)
+  - Media/Led (music, video, LedBlinky)
+  - Controles (input)
+  - Log
+- **Controles tab** — side-by-side DirectInput and XInput panels, each with:
+  - Enable toggle and device/slot selector (auto-updates on plug/unplug).
+  - Interactive button binding (press to assign; Left/Right accept axis or POV).
+  - Live test panel using `InputVisualPanel`: DInput shows stick + POV + button grid; XInput shows L Stick + R Stick + trigger bars + button pill-tags.
 - Editable option grid with browse helpers for executables and images.
 - Video thumbnail and background preview support.
 - Dirty tracking to avoid accidental loss of unsaved edits.
 - Multi-destination `config.json` synchronization.
 - Launch button to start the main launcher directly.
+- `lib\` assembly probing via `[ModuleInitializer]` + `AssemblyLoadContext`.
 
 ## Technology Stack
 
@@ -218,34 +227,63 @@ Recommended workflow:
 ### High-level component view
 
 ```text
-+-------------------------+      reads/writes      +----------------+
-| ArcadeShellConfigurator | <--------------------> |  config.json   |
-+------------+------------+                        +--------+-------+
-             |                                              |
-             | launch app                                   | load at startup
-             v                                              v
-+------------+----------------------------------------------+------------+
-|                         ArcadeShellSelector                            |
-|  - UI and app selection                                                |
-|  - Process launch and wait                                             |
-|  - Video background / thumbnail preview                                |
-|  - Music and spectrum analyzer                                         |
-|  - Controller input (XInput + DirectInput)                            |
-+-----------+---------------------------+-------------------+------------+
-            |                           |                   |
-            v                           v                   v
-      +-----------+               +-----------+       +------------+
-      |  LibVLC   |               |  NAudio   |       |  SharpDX   |
-      +-----------+               +-----------+       +------------+
++----------------------------------------------+      reads/writes      +----------------+
+|          ArcadeShellConfigurator              | <--------------------> |  config.json   |
+|                                              |                        +--------+-------+
+|  Tabs: General | Directorios | Media/Led     |                                 |
+|        Controles | Log                       |                                 |
+|                                              |                                 |
+|  Controls tab                                |                                 |
+|  +-----------------------------------------+|                                 |
+|  | DirectInput panel  | XInput panel        ||                                 |
+|  |  device selector   |  slot list          ||                                 |
+|  |  button binding    |  button binding     ||                                 |
+|  |  test: Stick+POV   |  test: L+R Stick    ||                                 |
+|  |  InputVisualPanel  |  InputVisualPanel   ||                                 |
+|  +-----------------------------------------+|                                 |
++----------------------------------------------+                                 |
+             |                                                                    |
+             | launch app                                                         | load at startup
+             v                                                                    v
++------------+--------------------------------------------------------------------+------------+
+|                                   ArcadeShellSelector                                       |
+|                                                                                             |
+|  Program.cs ──→ LibProber [ModuleInitializer]  ──→  AssemblyLoadContext (lib\ probing)     |
+|       |                                                                                     |
+|       ├──→ BootSplash (full-screen terminal boot animation)                                 |
+|       |       NAudio HDD sound loop | CRT effects | typing animation | cursor pre-phase     |
+|       |                                                                                     |
+|       └──→ Launcher (full-screen app selector)                                              |
+|               - Option grid UI                                                              |
+|               - Process launch and wait                                                     |
+|               - Video background / thumbnail preview                                        |
+|               - Tracker+audio music with spectrum analyzer                                  |
+|               - Controller input (XInput + DirectInput)                                     |
+|               - LedBlinky integration                                                       |
+|               - DebugLogger                                                                 |
++--------+---------------------------+---------------------------+---------------------------+
+         |                           |                           |
+         v                           v                           v
+   +-----------+               +-----------+             +------------+
+   |  LibVLC   |               |  NAudio   |             |  SharpDX   |
+   | (video bg,|               | (music,   |             | .XInput    |
+   |  thumbs)  |               |  spectrum,|             | .DirectInput|
+   +-----------+               |  sounds)  |             +------------+
+                               +-----------+
 ```
 
 ### Core runtime flow
 
 ```text
 App start
-  -> Program.cs creates Launcher
-  -> Launcher loads AppConfig
-  -> UI layout and media services initialize
+  -> LibProber [ModuleInitializer] registers lib\ assembly resolver
+  -> Program.cs pre-creates Launcher (hidden)
+  -> BootSplash shown (full-screen terminal animation + HDD sound)
+       -> 11-second cursor blink pre-phase (skippable)
+       -> Typed boot sequence with real system/config data
+       -> FormClosing: Launcher.Show() — both windows alive simultaneously (no desktop flash)
+  -> BootSplash closes; Application.Run(launcher)
+  -> Launcher loads AppConfig, initialises media + input
   -> Input loop polls keyboard/gamepad
   -> User selects option
   -> Process starts (optional wait-for-exit)
@@ -255,14 +293,19 @@ App start
 
 ### Key internal modules
 
+- `Program.cs`: entry point; `LibProber [ModuleInitializer]` for `lib\` assembly probing, seamless splash→launcher transition.
+- `BootSplash.cs`: full-screen CRT-style terminal boot animation (Courier New, scanlines, vignette, phosphor tint, random pauses, NAudio HDD sound loop, 11 s cursor pre-phase).
 - `Launcher.cs`: primary UI lifecycle, selection logic, app launch flow.
 - `AppConfig.cs`: config model and file loading/validation.
-- `VideoBackground.cs`: background video management.
-- `MusicPlayer.cs`: tracker and audio playback logic.
-- `SpectrumAnalyzer.cs`, `SpectrumPanel.cs`: audio visualization.
+- `VideoBackground.cs`: background video management via LibVLC.
+- `MusicPlayer.cs`: tracker (MOD/XM) and audio playback logic.
+- `SpectrumAnalyzer.cs`, `SpectrumPanel.cs`: WASAPI loopback audio visualization.
 - `LibVlcManager.cs`: LibVLC lifecycle and shared concerns.
 - `LedBlinky.cs`: optional hardware LED integration.
 - `TrackerMetadata.cs`: tracker file metadata support.
+- `DebugLogger.cs`: optional diagnostics log.
+- `ArcadeShellConfigurator/ConfigForm.cs`: full configurator UI; DInput and XInput panels with interactive button binding and live `InputVisualPanel` test view.
+- `ArcadeShellConfigurator/InputVisualPanel.cs`: custom-drawn panel rendering stick positions, POV hat, trigger bars, and button states for both DInput and XInput modes.
 
 ## Project Structure
 
@@ -272,7 +315,9 @@ ArcadeShellSelector.sln
 |-- ArcadeShellConfigurator/
 |   |-- ArcadeShellConfigurator.csproj
 |   |-- ConfigForm.cs
+|   |-- InputVisualPanel.cs
 |-- Program.cs
+|-- BootSplash.cs
 |-- Launcher.cs
 |-- AppConfig.cs
 |-- MusicPlayer.cs
@@ -281,9 +326,14 @@ ArcadeShellSelector.sln
 |-- SpectrumPanel.cs
 |-- LedBlinky.cs
 |-- TrackerMetadata.cs
+|-- DebugLogger.cs
 |-- config.json
 |-- publish.ps1
 |-- Media/
+|   |-- Sounds/   (boot audio)
+|   |-- Music/
+|   |-- Video/
+|   |-- Img/
 |-- .github/
 ```
 
