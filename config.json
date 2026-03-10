@@ -41,11 +41,11 @@
   "music": {
     "enabled": true,
     "musicRoot": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Music",
-    "files": [],
     "playRandom": false,
-    "selectedFile": "ELYSIUM.MOD",
+    "selectedFile": "DEADLOCK.XM",
     "volume": 100,
-    "audioDevice": "Altavoces (Realtek(R) Audio)"
+    "audioDevice": "Altavoces (Realtek(R) Audio)",
+    "thumbVideoVolume": 51
   },
   "Autor": {
     "Quien": "2026.Trume76"
@@ -56,10 +56,17 @@
   "input": {
     "xinputEnabled": true,
     "dinputEnabled": true,
-    "dinputButtonSelect": 3,
-    "dinputButtonBack": 1,
+    "dinputButtonSelect": 1,
+    "dinputButtonBack": 2,
     "dinputButtonLeft": 0,
-    "dinputButtonRight": 0
+    "dinputButtonRight": 0,
+    "dinputDeviceName": "",
+    "navCooldownMs": 300,
+    "xinputSlot": 0,
+    "xinputButtonSelect": 4096,
+    "xinputButtonBack": 8192,
+    "xinputButtonLeft": 0,
+    "xinputButtonRight": 0
   },
   "ledblinky": {
     "enabled": true,

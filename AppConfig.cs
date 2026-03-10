@@ -110,9 +110,6 @@ namespace ArcadeShellSelector
         [JsonPropertyName("musicRoot")]
         public string? MusicRoot { get; set; }
 
-        [JsonPropertyName("files")]
-        public List<string>? Files { get; set; }
-
         [JsonPropertyName("playRandom")]
         public bool PlayRandom { get; set; } = true;
 
@@ -124,6 +121,9 @@ namespace ArcadeShellSelector
 
         [JsonPropertyName("audioDevice")]
         public string? AudioDevice { get; set; }
+
+        [JsonPropertyName("thumbVideoVolume")]
+        public int ThumbVideoVolume { get; set; } = 0;
     }
 
     public sealed class AutorConfig
@@ -164,6 +164,48 @@ namespace ArcadeShellSelector
         /// <summary>1-based button number for "move right". 0 = use joystick axis / POV hat.</summary>
         [JsonPropertyName("dinputButtonRight")]
         public int DInputButtonRight { get; set; } = 0;
+
+        /// <summary>
+        /// Product name of the preferred DirectInput device.
+        /// Empty = use the first non-XInput device found (original behaviour).
+        /// Set this when the arcade machine has more than one encoder board connected
+        /// and you need to pick a specific one.
+        /// </summary>
+        [JsonPropertyName("dinputDeviceName")]
+        public string DInputDeviceName { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Minimum milliseconds between any two navigation moves (left/right).
+        /// Increase this value on arcade machines with noisy encoders to prevent
+        /// the selection from looping erratically. Default = 300 ms.
+        /// </summary>
+        [JsonPropertyName("navCooldownMs")]
+        public int NavCooldownMs { get; set; } = 300;
+
+        // ── XInput ──────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// XInput slot index to use (0-3 = specific slot, -1 = first connected).
+        /// Slot numbers here are zero-based: 0 = Player 1, 1 = Player 2, etc.
+        /// </summary>
+        [JsonPropertyName("xinputSlot")]
+        public int XInputSlot { get; set; } = -1;
+
+        /// <summary>GamepadButtonFlags value for "select / confirm". Default = A (4096).</summary>
+        [JsonPropertyName("xinputButtonSelect")]
+        public int XInputButtonSelect { get; set; } = 4096; // GamepadButtonFlags.A
+
+        /// <summary>GamepadButtonFlags value for "back / close". Default = B (8192).</summary>
+        [JsonPropertyName("xinputButtonBack")]
+        public int XInputButtonBack { get; set; } = 8192; // GamepadButtonFlags.B
+
+        /// <summary>GamepadButtonFlags value for "move left". 0 = DPad Left + left stick axis.</summary>
+        [JsonPropertyName("xinputButtonLeft")]
+        public int XInputButtonLeft { get; set; } = 0;
+
+        /// <summary>GamepadButtonFlags value for "move right". 0 = DPad Right + left stick axis.</summary>
+        [JsonPropertyName("xinputButtonRight")]
+        public int XInputButtonRight { get; set; } = 0;
     }
 
     public sealed class LedBlinkyConfig

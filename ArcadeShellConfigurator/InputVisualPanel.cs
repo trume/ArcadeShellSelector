@@ -21,6 +21,10 @@ namespace ArcadeShellConfigurator
         // Button states (up to 32)
         private bool[] _buttons = Array.Empty<bool>();
 
+        // XInput right-stick position: normalized -1.0 to 1.0
+        private float _rightStickX;
+        private float _rightStickY;
+
         // XInput triggers: 0-255
         private int _leftTrigger;
         private int _rightTrigger;
@@ -48,11 +52,14 @@ namespace ArcadeShellConfigurator
         }
 
         /// <summary>Update XInput state and repaint.</summary>
-        public void UpdateXInput(float stickX, float stickY, int leftTrigger, int rightTrigger, string[] pressedButtons)
+        public void UpdateXInput(float stickX, float stickY, float rightStickX, float rightStickY,
+                                 int leftTrigger, int rightTrigger, string[] pressedButtons)
         {
-            _stickX = Math.Clamp(stickX, -1f, 1f);
-            _stickY = Math.Clamp(stickY, -1f, 1f);
-            _leftTrigger = leftTrigger;
+            _stickX       = Math.Clamp(stickX,       -1f, 1f);
+            _stickY       = Math.Clamp(stickY,       -1f, 1f);
+            _rightStickX  = Math.Clamp(rightStickX,  -1f, 1f);
+            _rightStickY  = Math.Clamp(rightStickY,  -1f, 1f);
+            _leftTrigger  = leftTrigger;
             _rightTrigger = rightTrigger;
             _xinputButtonNames = pressedButtons ?? Array.Empty<string>();
             _isXInput = true;
@@ -63,6 +70,7 @@ namespace ArcadeShellConfigurator
         public void Reset()
         {
             _stickX = 0; _stickY = 0;
+            _rightStickX = 0; _rightStickY = 0;
             _povDegrees = -1;
             _buttons = Array.Empty<bool>();
             _xinputButtonNames = Array.Empty<string>();
@@ -226,76 +234,88 @@ namespace ArcadeShellConfigurator
         {
             int pad = 6;
 
-            // --- Left side: Left stick ---
-            int maxStick = 80;
-            int stickAreaSize = Math.Min(maxStick, Math.Min(Height - pad * 2 - 30, (Width / 3) - pad));
-            if (stickAreaSize < 40) stickAreaSize = 40;
-            int stickCx = pad + stickAreaSize / 2;
-            int stickCy = pad + stickAreaSize / 2;
-
             using var baseBrush = new SolidBrush(Color.FromArgb(60, 60, 60));
-            using var basePen = new Pen(Color.FromArgb(100, 100, 100), 1.5f);
-            g.FillEllipse(baseBrush, pad, pad, stickAreaSize, stickAreaSize);
-            g.DrawEllipse(basePen, pad, pad, stickAreaSize, stickAreaSize);
-
-            // Crosshair
-            using var crossPen = new Pen(Color.FromArgb(60, 60, 60), 1f);
-            g.DrawLine(crossPen, stickCx, pad + 4, stickCx, pad + stickAreaSize - 4);
-            g.DrawLine(crossPen, pad + 4, stickCy, pad + stickAreaSize - 4, stickCy);
-
-            float dotRadius = stickAreaSize * 0.12f;
-            float range = (stickAreaSize / 2f) - dotRadius - 3;
-            float dotX = stickCx + _stickX * range;
-            float dotY = stickCy - _stickY * range; // XInput Y is inverted
-
-            bool active = Math.Abs(_stickX) > 0.1f || Math.Abs(_stickY) > 0.1f;
-            var dotColor = active ? Color.FromArgb(0, 200, 80) : Color.FromArgb(160, 160, 160);
-            using var dotBrush = new SolidBrush(dotColor);
-            g.FillEllipse(dotBrush, dotX - dotRadius, dotY - dotRadius, dotRadius * 2, dotRadius * 2);
-
+            using var basePen   = new Pen(Color.FromArgb(100, 100, 100), 1.5f);
+            using var crossPen  = new Pen(Color.FromArgb(60, 60, 60), 1f);
             using var smallFont = new Font("Segoe UI", 7f);
-            using var dimBrush = new SolidBrush(Color.FromArgb(120, 120, 120));
-            var stickLabel = g.MeasureString("L STICK", smallFont);
-            g.DrawString("L STICK", smallFont, dimBrush, stickCx - stickLabel.Width / 2, pad + stickAreaSize + 2);
+            using var dimBrush  = new SolidBrush(Color.FromArgb(120, 120, 120));
 
-            // --- Trigger bars below the stick ---
-            int barLeft = pad;
-            int barTop = pad + stickAreaSize + 20;
-            int barWidth = stickAreaSize / 2 - 4;
-            int barHeight = 14;
+            // ── Stick size: fit two sticks + two trigger bars across the top ──
+            // Reserve at least 140px on the right for trigger bars; split the rest between sticks.
+            int trigAreaW    = Math.Max(100, (Width - pad * 2) / 3);
+            int sticksTotalW = Width - pad * 2 - trigAreaW - pad;
+            int stickAreaSize = Math.Min(80, Math.Max(36, sticksTotalW / 2 - 8));
+            int topH          = stickAreaSize + 18;   // circle + "X STICK" label
 
-            // LT
-            DrawTriggerBar(g, "LT", barLeft, barTop, barWidth, barHeight, _leftTrigger / 255f);
-            // RT
-            DrawTriggerBar(g, "RT", barLeft + barWidth + 8, barTop, barWidth, barHeight, _rightTrigger / 255f);
+            void DrawStick(int cx, int cy, int size, float nx, float ny, string label)
+            {
+                int left = cx - size / 2;
+                int top  = cy - size / 2;
+                g.FillEllipse(baseBrush, left, top, size, size);
+                g.DrawEllipse(basePen,   left, top, size, size);
+                g.DrawLine(crossPen, cx, top + 4,    cx,   top + size - 4);
+                g.DrawLine(crossPen, left + 4, cy, left + size - 4, cy);
 
-            // --- Right side: Pressed buttons as tags ---
-            int btnAreaLeft = pad + stickAreaSize + 20;
-            int btnAreaWidth = Width - btnAreaLeft - pad;
+                float dotR  = size * 0.12f;
+                float range = (size / 2f) - dotR - 3;
+                float dx    = cx + nx * range;
+                float dy    = cy - ny * range;  // XInput Y is inverted
+                bool  active = Math.Abs(nx) > 0.08f || Math.Abs(ny) > 0.08f;
+                using var dotBrush = new SolidBrush(active ? Color.FromArgb(0, 200, 80) : Color.FromArgb(160, 160, 160));
+                g.FillEllipse(dotBrush, dx - dotR, dy - dotR, dotR * 2, dotR * 2);
 
-            g.DrawString("BUTTONS", smallFont, dimBrush, btnAreaLeft, pad - 1);
+                var lsz = g.MeasureString(label, smallFont);
+                g.DrawString(label, smallFont, dimBrush, cx - lsz.Width / 2, top + size + 2);
+            }
+
+            // Left stick
+            int lsCx = pad + stickAreaSize / 2;
+            int lsCy = pad + stickAreaSize / 2;
+            DrawStick(lsCx, lsCy, stickAreaSize, _stickX, _stickY, "L STICK");
+
+            // Right stick
+            int rsCx = pad + stickAreaSize + 10 + stickAreaSize / 2;
+            int rsCy = pad + stickAreaSize / 2;
+            DrawStick(rsCx, rsCy, stickAreaSize, _rightStickX, _rightStickY, "R STICK");
+
+            // Trigger bars — occupy the right portion of the top row
+            int trigX      = pad + stickAreaSize * 2 + 18;
+            int trigW      = Width - trigX - pad;
+            int barH       = 18;
+            int ltY        = pad + (stickAreaSize / 2 - barH - 4);
+            int rtY        = pad + (stickAreaSize / 2 + 4);
+            DrawTriggerBar(g, "LT", trigX, ltY, trigW, barH, _leftTrigger  / 255f);
+            DrawTriggerBar(g, "RT", trigX, rtY, trigW, barH, _rightTrigger / 255f);
+
+            // ── Button tags — full width below the analog section ──
+            int btnY = pad + topH + 6;
+
+            using var tagFont      = new Font("Segoe UI", 8f, FontStyle.Bold);
+            using var tagBrush     = new SolidBrush(Color.FromArgb(0, 180, 255));
+            using var tagBgBrush   = new SolidBrush(Color.FromArgb(50, 70, 90));
+            using var tagTextBrush = new SolidBrush(Color.White);
+            using var sepPen       = new Pen(Color.FromArgb(70, 70, 70), 1f);
+
+            g.DrawLine(sepPen, pad, btnY - 2, Width - pad, btnY - 2);
+            var bHdr = g.MeasureString("BUTTONS", smallFont);
+            g.DrawString("BUTTONS", smallFont, dimBrush, pad, btnY);
 
             if (_xinputButtonNames.Length == 0)
             {
                 using var idleFont = new Font("Segoe UI", 8.5f, FontStyle.Italic);
-                g.DrawString("—", idleFont, dimBrush, btnAreaLeft, pad + 16);
+                g.DrawString("—", idleFont, dimBrush, pad + bHdr.Width + 6, btnY);
                 return;
             }
 
-            using var tagFont = new Font("Segoe UI", 8f, FontStyle.Bold);
-            using var tagBrush = new SolidBrush(Color.FromArgb(0, 180, 255));
-            using var tagBgBrush = new SolidBrush(Color.FromArgb(50, 70, 90));
-            using var tagTextBrush = new SolidBrush(Color.White);
-
-            int tx = btnAreaLeft;
-            int ty = pad + 16;
-            int tagPadH = 6, tagPadV = 3, tagGap = 4;
+            int tx = pad;
+            int ty = btnY + (int)bHdr.Height + 2;
+            int tagPadH = 6, tagPadV = 3, tagGap = 5;
             foreach (var name in _xinputButtonNames)
             {
-                var sz = g.MeasureString(name, tagFont);
-                int tw = (int)sz.Width + tagPadH * 2;
-                int th = (int)sz.Height + tagPadV * 2;
-                if (tx + tw > Width - pad) { tx = btnAreaLeft; ty += th + tagGap; }
+                var sz  = g.MeasureString(name, tagFont);
+                int tw  = (int)sz.Width  + tagPadH * 2;
+                int th  = (int)sz.Height + tagPadV * 2;
+                if (tx + tw > Width - pad) { tx = pad; ty += th + tagGap; }
                 if (ty + th > Height - pad) break;
 
                 var tagRect = new Rectangle(tx, ty, tw, th);

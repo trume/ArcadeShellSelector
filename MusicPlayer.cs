@@ -18,6 +18,12 @@ namespace ArcadeShellSelector
         public bool HasTracks => _tracks.Count > 0;
         public string? LastError { get; private set; }
         public string? CurrentTrackPath { get; private set; }
+        public int ConfiguredVolume => _configuredVolume;
+
+        public void SetVolume(int volume)
+        {
+            try { if (_mediaPlayer != null) _mediaPlayer.Volume = Math.Clamp(volume, 0, 200); } catch { }
+        }
 
         private readonly List<string> _tracks;
         private Media? _currentMedia;
@@ -45,32 +51,34 @@ namespace ArcadeShellSelector
 
             var exts = new[] { ".ogg", ".mod", ".xm" };
 
-            if (musicConfig.Files != null && musicConfig.Files.Count > 0)
-            {
-                var list = new List<string>();
-                foreach (var f in musicConfig.Files)
-                {
-                    if (string.IsNullOrWhiteSpace(f)) continue;
-                    var path = Path.IsPathRooted(f) ? f : Path.Combine(root, f);
-                    if (File.Exists(path) && exts.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase))
-                        list.Add(path);
-                }
-                _tracks = list;
-            }
-            else
-            {
-                _tracks = Directory.Exists(root)
-                    ? Directory.EnumerateFiles(root, "*.*", SearchOption.TopDirectoryOnly)
-                        .Where(p => exts.Contains(Path.GetExtension(p), StringComparer.OrdinalIgnoreCase))
-                        .ToList()
-                    : new List<string>();
-            }
+            _tracks = Directory.Exists(root)
+                ? Directory.EnumerateFiles(root, "*.*", SearchOption.TopDirectoryOnly)
+                    .Where(p => exts.Contains(Path.GetExtension(p), StringComparer.OrdinalIgnoreCase))
+                    .ToList()
+                : new List<string>();
 
-            // When a track ends, replay the same track to loop.
+            // When a track ends: pick a new random track in random mode, otherwise loop the current one.
             _mediaPlayer.EndReached += (_, __) =>
             {
                 if (_stopped) return;
-                try { PlayCurrent(); } catch { }
+                try
+                {
+                    if (_playRandom && _tracks.Count > 0)
+                    {
+                        // Avoid repeating the same track when there are alternatives
+                        var current = CurrentTrackPath;
+                        var candidates = _tracks.Count > 1
+                            ? _tracks.Where(t => !string.Equals(t, current, StringComparison.OrdinalIgnoreCase)).ToList()
+                            : _tracks;
+                        var next = candidates[new Random().Next(candidates.Count)];
+                        PlayPath(next);
+                    }
+                    else
+                    {
+                        PlayCurrent();
+                    }
+                }
+                catch { }
             };
             _mediaPlayer.EncounteredError += (_, __) => { _lastError = "Playback encountered an error."; try { LogDebug("Player event: EncounteredError"); } catch { } };
             _mediaPlayer.Playing += (_, __) => { _lastError = null; try { LogDebug("Player event: Playing"); } catch { } };
@@ -88,6 +96,31 @@ namespace ArcadeShellSelector
 
             // preferred audio device (optional)
             _audioDevice = string.IsNullOrWhiteSpace(musicConfig.AudioDevice) ? null : musicConfig.AudioDevice;
+
+            // Route to the configured audio device using VLC's own device enumeration.
+            // VLC's :audio-device= option requires the Windows endpoint GUID, NOT the friendly name.
+            // SetAudioOutput + SetOutputDevice is the correct LibVLCSharp API.
+            try
+            {
+                _mediaPlayer.SetAudioOutput("mmdevice");
+                if (!string.IsNullOrWhiteSpace(_audioDevice))
+                {
+                    var vlcDevs = _libVlc?.AudioOutputDevices("mmdevice");
+                    if (vlcDevs != null)
+                    {
+                        foreach (var d in vlcDevs)
+                        {
+                            if (string.Equals(d.Description, _audioDevice, StringComparison.OrdinalIgnoreCase))
+                            {
+                                _mediaPlayer.SetOutputDevice(d.DeviceIdentifier);
+                                LogDebug($"Audio device set: {d.Description} ({d.DeviceIdentifier})");
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex) { try { LogDebug("Audio device setup failed: " + ex.Message); } catch { } }
 
             // playback mode
             _playRandom = musicConfig.PlayRandom;
@@ -227,11 +260,6 @@ namespace ArcadeShellSelector
                 try { _currentMedia?.Dispose(); } catch { }
                 _currentMedia = media;
                 try { _currentMedia.AddOption(":no-video"); } catch { }
-                try { _currentMedia.AddOption(":aout=mmdevice"); LogDebug("Added aout option: mmdevice"); } catch { LogDebug("Failed to add aout option: mmdevice"); }
-                if (!string.IsNullOrWhiteSpace(_audioDevice))
-                {
-                    try { _currentMedia.AddOption(":audio-device=" + _audioDevice); LogDebug("Added audio-device option: " + _audioDevice); } catch { LogDebug("Failed to add audio-device option: " + _audioDevice); }
-                }
 
                 _mediaPlayer!.Media = _currentMedia;
                 bool started = false;

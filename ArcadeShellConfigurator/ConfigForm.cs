@@ -42,9 +42,12 @@ namespace ArcadeShellConfigurator
         private TextBox txtMusicRoot = null!;
         private TrackBar trkVolume = null!;
         private Label lblVolumeValue = null!;
+        private TrackBar trkThumbVideoVolume = null!;
+        private Label lblThumbVideoVolumeValue = null!;
         private ComboBox cboAudioDevice = null!;
         private CheckBox chkPlayRandom = null!;
         private ListBox lstMusicFiles = null!;
+        private RichTextBox txtMetaInfo = null!;
 
         // Options tab
         private DataGridView gridOptions = null!;
@@ -52,15 +55,34 @@ namespace ArcadeShellConfigurator
         // Input tab
         private CheckBox chkXInputEnabled = null!;
         private CheckBox chkDInputEnabled = null!;
-        private NumericUpDown numDInputButtonSelect = null!;
-        private NumericUpDown numDInputButtonBack = null!;
-        private NumericUpDown numDInputButtonLeft = null!;
-        private NumericUpDown numDInputButtonRight = null!;
+        private ComboBox cboDInputDevice = null!;
+        // (scan buttons removed — device changes are detected automatically via WM_DEVICECHANGE)
+        // Interactive button-binding labels (show current assignment)
+        private Label lblBindSelect = null!;
+        private Label lblBindBack   = null!;
+        private Label lblBindLeft   = null!;
+        private Label lblBindRight  = null!;
+        // Interactive button-binding trigger buttons
+        private Button btnBindSelect = null!;
+        private Button btnBindBack   = null!;
+        private Button btnBindLeft   = null!;
+        private Button btnBindRight  = null!;
+        // Stored binding values (1-based; 0 = axis/POV for Left/Right)
+        private int _bindSelectBtn = 1;
+        private int _bindBackBtn   = 2;
+        private int _bindLeftBtn   = 0;
+        private int _bindRightBtn  = 0;
+        // Assignment session state
+        private int _bindingTarget = -1; // 0=select,1=back,2=left,3=right,-1=idle
+        private int _bindCountdown;
+        private System.Windows.Forms.Timer? _bindTimer;
+        private Joystick? _bindJoystick;
+        private DirectInput? _bindDInput;
+        private bool[] _bindLastButtons = Array.Empty<bool>();
 
         // Input test panel — DirectInput
         private GroupBox grpDI = null!;
         private InputVisualPanel visualDInput = null!;
-        private ListBox lstDInputDevices = null!;
         private Button btnTestDInput = null!;
         private Label lblTestDevice = null!;
         private Label lblTestButtons = null!;
@@ -79,6 +101,23 @@ namespace ArcadeShellConfigurator
         private Label lblXInputButtons = null!;
         private Label lblXInputAxes = null!;
         private System.Windows.Forms.Timer? _xinputTestTimer;
+        // Auto-rescan: fires once 600 ms after the last WM_DEVICECHANGE notification
+        private System.Windows.Forms.Timer? _deviceRescanTimer;
+        // XInput button-binding display labels
+        private Label lblXiBindSelect = null!, lblXiBindBack = null!, lblXiBindLeft = null!, lblXiBindRight = null!;
+        // XInput button-binding trigger buttons
+        private Button btnXiBindSelect = null!, btnXiBindBack = null!, btnXiBindLeft = null!, btnXiBindRight = null!;
+        // Stored XInput binding values (GamepadButtonFlags integer; 0 = DPad/stick for L/R)
+        private int _xiBindSelectBtn = 4096;  // A
+        private int _xiBindBackBtn   = 8192;  // B
+        private int _xiBindLeftBtn   = 0;     // DPad + stick
+        private int _xiBindRightBtn  = 0;     // DPad + stick
+        // XInput assignment session state
+        private int _xiBindingTarget = -1;    // 0=select,1=back,2=left,3=right,-1=idle
+        private int _xiBindCountdown;
+        private int _xiBindSlot;
+        private System.Windows.Forms.Timer? _xiBindTimer;
+        private GamepadButtonFlags _xiBindLastButtons;
 
         // Bottom panel
         private bool _suppressDirty;
@@ -94,11 +133,12 @@ namespace ArcadeShellConfigurator
         private string _logFilePath = "";
         private string _logRawContent = "";
 
-        // Music preview
-        private LibVLCSharp.Shared.LibVLC? _previewLibVlc;
+        // Music preview — uses LibVLCManager.Instance (same as the main app's MusicPlayer)
         private LibVLCSharp.Shared.MediaPlayer? _previewPlayer;
+        private LibVLCSharp.Shared.Media? _previewMedia;
 
-        // Video preview
+        // Video preview — _previewLibVlc is the warm-up instance for video only
+        private LibVLCSharp.Shared.LibVLC? _previewLibVlc;
         private LibVLCSharp.Shared.MediaPlayer? _videoPreviewPlayer;
         private bool _isVideoPlaying;
         private System.Diagnostics.Stopwatch? _videoStartWatch;
@@ -160,7 +200,7 @@ namespace ArcadeShellConfigurator
         {
             Text = "Arcade Shell Configurator";
             Size = new Size(860, 900);
-            MinimumSize = new Size(820, 750);
+            MinimumSize = new Size(820, 840);
             StartPosition = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.Sizable;
             MaximizeBox = true;
@@ -407,7 +447,7 @@ namespace ArcadeShellConfigurator
                 Location = new Point(16, 48),
                 IntegralHeight = false,
             };
-            var txtMetaInfo = new RichTextBox
+            txtMetaInfo = new RichTextBox
             {
                 ReadOnly = true,
                 BackColor = Color.FromArgb(24, 24, 24),
@@ -433,11 +473,28 @@ namespace ArcadeShellConfigurator
             };
             btnStopPreview.Click += (_, _) => StopMusicPreview();
             btnRefreshFiles.Click += (_, _) => RefreshMusicFileList();
-            chkPlayRandom.CheckedChanged += (_, _) => lstMusicFiles.Enabled = !chkPlayRandom.Checked;
+            chkPlayRandom.CheckedChanged += (_, _) =>
+            {
+                lstMusicFiles.Enabled = !chkPlayRandom.Checked;
+                // When switching away from random, auto-preview the currently selected file
+                if (!chkPlayRandom.Checked && lstMusicFiles.SelectedItem is string fileName)
+                {
+                    var root = txtMusicRoot.Text;
+                    if (!string.IsNullOrWhiteSpace(root))
+                    {
+                        var fullPath = Path.IsPathRooted(root)
+                            ? Path.Combine(root, fileName)
+                            : Path.Combine(Path.GetDirectoryName(_configPath) ?? ".", root, fileName);
+                        if (File.Exists(fullPath))
+                            PreviewMusicFile(fullPath);
+                    }
+                }
+            };
 
-            // Preview + metadata on selection change
+            // Preview + metadata on selection change (only when not in random mode and not loading)
             lstMusicFiles.SelectedIndexChanged += (_, _) =>
             {
+                if (_suppressDirty) return;
                 if (lstMusicFiles.SelectedItem is string fileName)
                 {
                     var root = txtMusicRoot.Text;
@@ -448,7 +505,8 @@ namespace ArcadeShellConfigurator
                             : Path.Combine(Path.GetDirectoryName(_configPath) ?? ".", root, fileName);
                         if (File.Exists(fullPath))
                         {
-                            PreviewMusicFile(fullPath);
+                            if (!chkPlayRandom.Checked)
+                                PreviewMusicFile(fullPath);
                             ShowTrackerMetadata(txtMetaInfo, fullPath);
                         }
                     }
@@ -472,28 +530,13 @@ namespace ArcadeShellConfigurator
             {
                 Text = "Audio Output",
                 Dock = DockStyle.Top,
-                Height = 110,
+                Height = 170,
                 Padding = new Padding(12, 8, 12, 8)
             };
-            var lblVolume = new Label { Text = "Volume:", Location = new Point(16, 28), AutoSize = true };
-            trkVolume = new TrackBar
-            {
-                Location = new Point(140, 20),
-                Width = 300,
-                Minimum = 0,
-                Maximum = 100,
-                TickFrequency = 10,
-                LargeChange = 10,
-                SmallChange = 1,
-                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
-            };
-            lblVolumeValue = new Label { Text = "0", Location = new Point(448, 28), AutoSize = true, Anchor = AnchorStyles.Top | AnchorStyles.Right, Font = new Font(Font.FontFamily, 9f, FontStyle.Bold) };
-            trkVolume.ValueChanged += (_, _) => lblVolumeValue.Text = $"{trkVolume.Value}%";
-
-            var lblAudioDev = new Label { Text = "Audio Device:", Location = new Point(16, 72), AutoSize = true };
+            var lblAudioDev = new Label { Text = "Audio Device:", Location = new Point(16, 28), AutoSize = true };
             cboAudioDevice = new ComboBox
             {
-                Location = new Point(140, 69),
+                Location = new Point(140, 25),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                 DropDownStyle = ComboBoxStyle.DropDownList,
                 DrawMode = DrawMode.OwnerDrawFixed
@@ -516,20 +559,57 @@ namespace ArcadeShellConfigurator
             var lblAudioDevHint = new Label
             {
                 Text = "First entry uses system default; * = current default",
-                Location = new Point(140, 92),
+                Location = new Point(140, 48),
                 AutoSize = true,
                 ForeColor = SystemColors.GrayText,
                 Font = new Font(Font, FontStyle.Italic),
             };
-            grpAudio.Controls.AddRange(new Control[] { lblVolume, trkVolume, lblVolumeValue, lblAudioDev, cboAudioDevice, lblAudioDevHint });
+
+            var lblVolume = new Label { Text = "Volume:", Location = new Point(16, 82), AutoSize = true };
+            trkVolume = new TrackBar
+            {
+                Location = new Point(140, 74),
+                Width = 300,
+                Height = 45,
+                AutoSize = false,
+                Minimum = 0,
+                Maximum = 100,
+                TickFrequency = 10,
+                LargeChange = 10,
+                SmallChange = 1,
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
+            };
+            lblVolumeValue = new Label { Text = "0", Location = new Point(448, 82), AutoSize = true, Anchor = AnchorStyles.Top | AnchorStyles.Right, Font = new Font(Font.FontFamily, 9f, FontStyle.Bold) };
+            trkVolume.ValueChanged += (_, _) => lblVolumeValue.Text = $"{trkVolume.Value}%";
+
+            var lblThumbVol = new Label { Text = "Thumb Video Vol:", Location = new Point(16, 127), AutoSize = true };
+            trkThumbVideoVolume = new TrackBar
+            {
+                Location = new Point(140, 119),
+                Width = 300,
+                Height = 45,
+                AutoSize = false,
+                Minimum = 0,
+                Maximum = 100,
+                TickFrequency = 10,
+                LargeChange = 10,
+                SmallChange = 1,
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
+            };
+            lblThumbVideoVolumeValue = new Label { Text = "0", Location = new Point(448, 127), AutoSize = true, Anchor = AnchorStyles.Top | AnchorStyles.Right, Font = new Font(Font.FontFamily, 9f, FontStyle.Bold) };
+            trkThumbVideoVolume.ValueChanged += (_, _) => lblThumbVideoVolumeValue.Text = $"{trkThumbVideoVolume.Value}%";
+
+            grpAudio.Controls.AddRange(new Control[] { lblAudioDev, cboAudioDevice, lblAudioDevHint, lblVolume, trkVolume, lblVolumeValue, lblThumbVol, trkThumbVideoVolume, lblThumbVideoVolumeValue });
 
             // Position volume label and size controls on layout
             grpAudio.Layout += (_, _) =>
             {
                 int right = grpAudio.ClientSize.Width - 16;
-                lblVolumeValue.Location = new Point(right - 40, 28);
-                trkVolume.Width = lblVolumeValue.Left - trkVolume.Left - 6;
                 cboAudioDevice.Width = right - cboAudioDevice.Left;
+                lblVolumeValue.Location = new Point(right - 40, 82);
+                trkVolume.Width = lblVolumeValue.Left - trkVolume.Left - 6;
+                lblThumbVideoVolumeValue.Location = new Point(right - 40, 127);
+                trkThumbVideoVolume.Width = lblThumbVideoVolumeValue.Left - trkThumbVideoVolume.Left - 6;
             };
 
             tabMusic.Controls.Add(grpMusicFiles);  // Dock.Fill — must be added first
@@ -718,82 +798,100 @@ namespace ArcadeShellConfigurator
             // === Input tab ===
             var tabInput = new TabPage("Controles") { Padding = new Padding(8) };
 
-            var grpInputSettings = new GroupBox
+            // Two self-contained side-by-side frames: DInput (left) | XInput (right).
+            // Each follows the natural user flow: (1) enable → (2) select device → (3) assign buttons → (4) test.
+            // TableLayoutPanel gives each frame exactly 50 % of the available width.
+            var tblInput = new TableLayoutPanel
             {
-                Text = "Configuración de entrada",
-                Dock = DockStyle.Top,
-                Height = 220,
-                Padding = new Padding(12, 8, 12, 8)
+                Dock = DockStyle.Fill,
+                ColumnCount = 2,
+                RowCount = 1,
+                CellBorderStyle = TableLayoutPanelCellBorderStyle.None,
             };
-            chkXInputEnabled = new CheckBox { Text = "XInput habilitado (Xbox / compatible)", Location = new Point(16, 20), AutoSize = true };
-            chkDInputEnabled = new CheckBox { Text = "DirectInput habilitado (arcade encoders)", Location = new Point(16, 46), AutoSize = true };
+            tblInput.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
+            tblInput.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
+            tblInput.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
 
-            var lblSelect = new Label { Text = "Botón Seleccionar (base 1):", Location = new Point(16, 84), AutoSize = true };
-            numDInputButtonSelect = new NumericUpDown { Location = new Point(220, 81), Width = 70, Minimum = 1, Maximum = 32, Value = 1 };
+            // ══════════════════════════════════════════════════════════
+            // LEFT — DirectInput (Zero Delay, Xin-Mo, I-PAC …)
+            // ══════════════════════════════════════════════════════════
+            grpDI = new GroupBox
+            {
+                Text = "DirectInput — Arcade Encoders",
+                Dock = DockStyle.Fill,
+                Padding = new Padding(10, 4, 10, 8)
+            };
 
-            var lblBack = new Label { Text = "Botón Atrás / Cerrar (base 1):", Location = new Point(16, 117), AutoSize = true };
-            numDInputButtonBack = new NumericUpDown { Location = new Point(220, 114), Width = 70, Minimum = 1, Maximum = 32, Value = 2 };
+            // (1) Enable
+            chkDInputEnabled = new CheckBox { Text = "DirectInput habilitado", Location = new Point(10, 22), AutoSize = true };
 
-            var lblLeft = new Label { Text = "Botón Izquierda (0 = eje/POV):", Location = new Point(16, 150), AutoSize = true };
-            numDInputButtonLeft = new NumericUpDown { Location = new Point(220, 147), Width = 70, Minimum = 0, Maximum = 32, Value = 0 };
+            // (2) Device selector
+            var diSep1 = MakeSectionLabel("Dispositivo activo", new Point(10, 50));
+            var lblDiAutoUpdate = new Label
+            {
+                Text = "Se actualiza al conectar / desconectar",
+                Location = new Point(10, 50),
+                AutoSize = true,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                ForeColor = SystemColors.GrayText,
+                Font = new Font(Font, FontStyle.Italic),
+            };
+            var lblDInputDevice = new Label { Text = "Dispositivo:", Location = new Point(10, 72), AutoSize = true };
+            cboDInputDevice = new ComboBox
+            {
+                Location = new Point(100, 69),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+                DropDownStyle = ComboBoxStyle.DropDownList,
+            };
+            cboDInputDevice.Items.Add("(Primero disponible)");
+            cboDInputDevice.SelectedIndex = 0;
 
-            var lblRight = new Label { Text = "Botón Derecha (0 = eje/POV):", Location = new Point(16, 183), AutoSize = true };
-            numDInputButtonRight = new NumericUpDown { Location = new Point(220, 180), Width = 70, Minimum = 0, Maximum = 32, Value = 0 };
+            // (3) Button bindings — Y positions match XInput panel exactly
+            var diSep2 = MakeSectionLabel("Asignación de botones", new Point(10, 152));
+            var lblFnSelect = new Label { Text = "Seleccionar / Lanzar:", Location = new Point(10, 172), AutoSize = true };
+            var lblFnBack   = new Label { Text = "Salir / Cerrar:",       Location = new Point(10, 200), AutoSize = true };
+            var lblFnLeft   = new Label { Text = "Navegar Izquierda:",    Location = new Point(10, 228), AutoSize = true };
+            var lblFnRight  = new Label { Text = "Navegar Derecha:",      Location = new Point(10, 256), AutoSize = true };
+
+            lblBindSelect = new Label { Text = "Botón 1",   Location = new Point(165, 169), Size = new Size(110, 23), BorderStyle = BorderStyle.FixedSingle, TextAlign = ContentAlignment.MiddleCenter };
+            lblBindBack   = new Label { Text = "Botón 2",   Location = new Point(165, 197), Size = new Size(110, 23), BorderStyle = BorderStyle.FixedSingle, TextAlign = ContentAlignment.MiddleCenter };
+            lblBindLeft   = new Label { Text = "Eje / POV",  Location = new Point(165, 225), Size = new Size(110, 23), BorderStyle = BorderStyle.FixedSingle, TextAlign = ContentAlignment.MiddleCenter };
+            lblBindRight  = new Label { Text = "Eje / POV",  Location = new Point(165, 253), Size = new Size(110, 23), BorderStyle = BorderStyle.FixedSingle, TextAlign = ContentAlignment.MiddleCenter };
+
+            btnBindSelect = new Button { Text = "⊕ Asignar", Location = new Point(285, 169), Size = new Size(90, 23) };
+            btnBindBack   = new Button { Text = "⊕ Asignar", Location = new Point(285, 197), Size = new Size(90, 23) };
+            btnBindLeft   = new Button { Text = "⊕ Asignar", Location = new Point(285, 225), Size = new Size(90, 23) };
+            btnBindRight  = new Button { Text = "⊕ Asignar", Location = new Point(285, 253), Size = new Size(90, 23) };
+            btnBindSelect.Click += (_, _) => { if (_bindingTarget == 0) CancelBind(); else StartBind(0); };
+            btnBindBack.Click   += (_, _) => { if (_bindingTarget == 1) CancelBind(); else StartBind(1); };
+            btnBindLeft.Click   += (_, _) => { if (_bindingTarget == 2) CancelBind(); else StartBind(2); };
+            btnBindRight.Click  += (_, _) => { if (_bindingTarget == 3) CancelBind(); else StartBind(3); };
 
             var lblInputHint = new Label
             {
-                Text = "0 = navegar con eje analógico / hat POV del joystick.",
-                Location = new Point(16, 204),
-                AutoSize = true,
-                ForeColor = SystemColors.GrayText
-            };
-            grpInputSettings.Controls.AddRange(new Control[]
-            {
-                chkXInputEnabled, chkDInputEnabled,
-                lblSelect, numDInputButtonSelect,
-                lblBack, numDInputButtonBack,
-                lblLeft, numDInputButtonLeft,
-                lblRight, numDInputButtonRight,
-                lblInputHint
-            });
-
-            // Test panel — two columns: DirectInput (left) | XInput (right)
-            var grpTest = new GroupBox
-            {
-                Text = "Probar dispositivo",
-                Dock = DockStyle.Fill,
-                Padding = new Padding(8, 12, 8, 8)
+                Text = "Pulsa ⊕ Asignar y presiona el botón en el dispositivo. Izquierda/Derecha también acepta eje o POV.",
+                Location = new Point(10, 282),
+                Size = new Size(400, 26),
+                AutoSize = false,
+                ForeColor = SystemColors.GrayText,
+                Font = new Font(Font, FontStyle.Italic),
             };
 
-            // --- DirectInput column ---
-            grpDI = new GroupBox
-            {
-                Text = "DirectInput",
-                Dock = DockStyle.Left,
-                Width = 370,
-                Padding = new Padding(8, 8, 8, 8)
-            };
-            lstDInputDevices = new ListBox
-            {
-                Location = new Point(8, 18),
-                Size = new Size(340, 56),
-                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-                SelectionMode = SelectionMode.One,
-                HorizontalScrollbar = true
-            };
-            btnTestDInput  = new Button { Text = "\u25b6 Iniciar", Location = new Point(8, 80), Width = 110, Height = 24 };
+            // (4) Test — Y positions now match XInput test section exactly
+            var diSep3 = MakeSectionLabel("Probar dispositivo", new Point(10, 318));
+            btnTestDInput = new Button { Text = "\u25b6 Iniciar", Location = new Point(10, 338), Width = 110, Height = 24 };
             btnTestDInput.Click += BtnTestDInput_Click;
-            lblTestDevice  = new Label { Text = "Activo: \u2014", Location = new Point(124, 84), AutoSize = true };
+            lblTestDevice = new Label { Text = "Activo: \u2014", Location = new Point(126, 342), AutoSize = true };
             visualDInput = new InputVisualPanel
             {
-                Location = new Point(8, 110),
-                Size = new Size(340, 130),
+                Location = new Point(10, 370),
+                Size = new Size(410, 180),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom
             };
             lblTestButtons = new Label
             {
                 Text = "Botones: \u2014",
-                Location = new Point(8, 246),
+                Location = new Point(10, 558),
                 AutoSize = true,
                 Font = new Font("Courier New", 8.5f),
                 Anchor = AnchorStyles.Bottom | AnchorStyles.Left
@@ -801,58 +899,169 @@ namespace ArcadeShellConfigurator
             lblTestAxes = new Label
             {
                 Text = "Eje X: \u2014 | Eje Y: \u2014 | POV: \u2014",
-                Location = new Point(8, 266),
+                Location = new Point(10, 576),
                 AutoSize = true,
                 ForeColor = SystemColors.GrayText,
                 Anchor = AnchorStyles.Bottom | AnchorStyles.Left
             };
-            grpDI.Controls.AddRange(new Control[] { lstDInputDevices, btnTestDInput, lblTestDevice, visualDInput, lblTestButtons, lblTestAxes });
 
-            // --- XInput column ---
+            grpDI.Controls.AddRange(new Control[]
+            {
+                chkDInputEnabled,
+                diSep1, lblDiAutoUpdate, lblDInputDevice, cboDInputDevice,
+                diSep2, lblFnSelect, lblBindSelect, btnBindSelect,
+                        lblFnBack,   lblBindBack,   btnBindBack,
+                        lblFnLeft,   lblBindLeft,   btnBindLeft,
+                        lblFnRight,  lblBindRight,  btnBindRight,
+                lblInputHint,
+                diSep3, btnTestDInput, lblTestDevice,
+                visualDInput, lblTestButtons, lblTestAxes
+            });
+            grpDI.Layout += (_, _) =>
+            {
+                int right = grpDI.ClientSize.Width - 10;
+                lblDiAutoUpdate.Location = new Point(right - lblDiAutoUpdate.PreferredWidth, 50);
+                // combo is on its own row — extend to full width
+                cboDInputDevice.Width = right - cboDInputDevice.Left;
+                foreach (var (lbl, btn) in new[]
+                {
+                    (lblBindSelect, btnBindSelect), (lblBindBack, btnBindBack),
+                    (lblBindLeft,   btnBindLeft),   (lblBindRight, btnBindRight)
+                })
+                {
+                    btn.Location = new Point(right - btn.Width, btn.Top);
+                    lbl.Width = btn.Left - lbl.Left - 6;
+                }
+                lblInputHint.Width = right - 10;
+                visualDInput.Width = right - visualDInput.Left;
+            };
+
+            // ══════════════════════════════════════════════════════════
+            // RIGHT — XInput (Xbox / compatible)
+            // ══════════════════════════════════════════════════════════
             grpXI = new GroupBox
             {
-                Text = "XInput (Xbox / compatible)",
+                Text = "XInput — Xbox / Compatible",
                 Dock = DockStyle.Fill,
-                Padding = new Padding(8, 8, 8, 8)
+                Padding = new Padding(10, 4, 10, 8)
+            };
+
+            // (1) Enable
+            chkXInputEnabled = new CheckBox { Text = "XInput habilitado", Location = new Point(10, 22), AutoSize = true };
+
+            // (2) Device / slot selector
+            var xiSep1 = MakeSectionLabel("Controladores detectados", new Point(10, 50));
+            var lblXiAutoUpdate = new Label
+            {
+                Text = "Se actualiza al conectar / desconectar",
+                Location = new Point(10, 50),
+                AutoSize = true,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                ForeColor = SystemColors.GrayText,
+                Font = new Font(Font, FontStyle.Italic),
             };
             lstXInputSlots = new ListBox
             {
-                Location = new Point(8, 18),
-                Size = new Size(340, 56),
+                Location = new Point(10, 70),
+                Size = new Size(300, 72),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                 SelectionMode = SelectionMode.One
             };
-            btnTestXInput  = new Button { Text = "\u25b6 Iniciar", Location = new Point(8, 80), Width = 110, Height = 24 };
+            lstXInputSlots.SelectedIndexChanged += (_, _) => { if (!_suppressDirty) AutoSave(); };
+
+            // (3) Button bindings
+            var xiSep2 = MakeSectionLabel("Asignación de botones", new Point(10, 152));
+            var lblFnXiSelect = new Label { Text = "Seleccionar / Lanzar:", Location = new Point(10, 172), AutoSize = true };
+            var lblFnXiBack   = new Label { Text = "Salir / Cerrar:",       Location = new Point(10, 200), AutoSize = true };
+            var lblFnXiLeft   = new Label { Text = "Navegar Izquierda:",    Location = new Point(10, 228), AutoSize = true };
+            var lblFnXiRight  = new Label { Text = "Navegar Derecha:",      Location = new Point(10, 256), AutoSize = true };
+
+            lblXiBindSelect = new Label { Text = "A",         Location = new Point(165, 169), Size = new Size(110, 23), BorderStyle = BorderStyle.FixedSingle, TextAlign = ContentAlignment.MiddleCenter };
+            lblXiBindBack   = new Label { Text = "B",         Location = new Point(165, 197), Size = new Size(110, 23), BorderStyle = BorderStyle.FixedSingle, TextAlign = ContentAlignment.MiddleCenter };
+            lblXiBindLeft   = new Label { Text = "DPad / Palanca", Location = new Point(165, 225), Size = new Size(110, 23), BorderStyle = BorderStyle.FixedSingle, TextAlign = ContentAlignment.MiddleCenter };
+            lblXiBindRight  = new Label { Text = "DPad / Palanca", Location = new Point(165, 253), Size = new Size(110, 23), BorderStyle = BorderStyle.FixedSingle, TextAlign = ContentAlignment.MiddleCenter };
+
+            btnXiBindSelect = new Button { Text = "\u2295 Asignar", Location = new Point(285, 169), Size = new Size(90, 23) };
+            btnXiBindBack   = new Button { Text = "\u2295 Asignar", Location = new Point(285, 197), Size = new Size(90, 23) };
+            btnXiBindLeft   = new Button { Text = "\u2295 Asignar", Location = new Point(285, 225), Size = new Size(90, 23) };
+            btnXiBindRight  = new Button { Text = "\u2295 Asignar", Location = new Point(285, 253), Size = new Size(90, 23) };
+            btnXiBindSelect.Click += (_, _) => { if (_xiBindingTarget == 0) CancelXiBind(); else StartXiBind(0); };
+            btnXiBindBack.Click   += (_, _) => { if (_xiBindingTarget == 1) CancelXiBind(); else StartXiBind(1); };
+            btnXiBindLeft.Click   += (_, _) => { if (_xiBindingTarget == 2) CancelXiBind(); else StartXiBind(2); };
+            btnXiBindRight.Click  += (_, _) => { if (_xiBindingTarget == 3) CancelXiBind(); else StartXiBind(3); };
+
+            var lblXiHint = new Label
+            {
+                Text = "Selecciona el slot activo, luego pulsa \u2295 Asignar y presiona el botón en el mando. Izquierda/Derecha: valor 0 usa DPad + palanca.",
+                Location = new Point(10, 282),
+                Size = new Size(400, 26),
+                AutoSize = false,
+                ForeColor = SystemColors.GrayText,
+                Font = new Font(Font, FontStyle.Italic),
+            };
+
+            // (4) Test
+            var xiSep3 = MakeSectionLabel("Probar dispositivo", new Point(10, 318));
+            btnTestXInput = new Button { Text = "\u25b6 Iniciar", Location = new Point(10, 338), Width = 110, Height = 24 };
             btnTestXInput.Click += BtnTestXInput_Click;
-            lblXInputStatus  = new Label { Text = "Activo: \u2014", Location = new Point(124, 84), AutoSize = true };
+            lblXInputStatus = new Label { Text = "Activo: \u2014", Location = new Point(126, 342), AutoSize = true };
             visualXInput = new InputVisualPanel
             {
-                Location = new Point(8, 110),
-                Size = new Size(340, 130),
+                Location = new Point(10, 370),
+                Size = new Size(300, 180),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom
             };
             lblXInputButtons = new Label
             {
                 Text = "Botones: \u2014",
-                Location = new Point(8, 246),
+                Location = new Point(10, 558),
                 AutoSize = true,
                 Font = new Font("Courier New", 8.5f),
                 Anchor = AnchorStyles.Bottom | AnchorStyles.Left
             };
             lblXInputAxes = new Label
             {
-                Text = "LX: \u2014 | LY: \u2014 | LT: \u2014 | RT: \u2014",
-                Location = new Point(8, 266),
+                Text = "LX: \u2014 | LY: \u2014 | RX: \u2014 | RY: \u2014 | LT: \u2014 | RT: \u2014",
+                Location = new Point(10, 576),
                 AutoSize = true,
                 ForeColor = SystemColors.GrayText,
                 Anchor = AnchorStyles.Bottom | AnchorStyles.Left
             };
-            grpXI.Controls.AddRange(new Control[] { lstXInputSlots, btnTestXInput, lblXInputStatus, visualXInput, lblXInputButtons, lblXInputAxes });
 
-            grpTest.Controls.AddRange(new Control[] { grpXI, grpDI });
+            grpXI.Controls.AddRange(new Control[]
+            {
+                chkXInputEnabled,
+                xiSep1, lblXiAutoUpdate, lstXInputSlots,
+                xiSep2,
+                    lblFnXiSelect, lblXiBindSelect, btnXiBindSelect,
+                    lblFnXiBack,   lblXiBindBack,   btnXiBindBack,
+                    lblFnXiLeft,   lblXiBindLeft,   btnXiBindLeft,
+                    lblFnXiRight,  lblXiBindRight,  btnXiBindRight,
+                lblXiHint,
+                xiSep3, btnTestXInput, lblXInputStatus,
+                visualXInput, lblXInputButtons, lblXInputAxes
+            });
+            grpXI.Layout += (_, _) =>
+            {
+                int right = grpXI.ClientSize.Width - 10;
+                lblXiAutoUpdate.Location = new Point(right - lblXiAutoUpdate.PreferredWidth, 50);
+                lstXInputSlots.Width = right - lstXInputSlots.Left;
+                foreach (var (lbl, btn) in new[]
+                {
+                    (lblXiBindSelect, btnXiBindSelect), (lblXiBindBack, btnXiBindBack),
+                    (lblXiBindLeft,   btnXiBindLeft),   (lblXiBindRight, btnXiBindRight)
+                })
+                {
+                    btn.Location = new Point(right - btn.Width, btn.Top);
+                    lbl.Width = btn.Left - lbl.Left - 6;
+                }
+                lblXiHint.Width    = right - 10;
+                visualXInput.Width = right - visualXInput.Left;
+            };
 
-            tabInput.Controls.Add(grpTest);
-            tabInput.Controls.Add(grpInputSettings);
+            tblInput.Controls.Add(grpDI, 0, 0);
+            tblInput.Controls.Add(grpXI, 1, 0);
+            tabInput.Controls.Add(tblInput);
 
             tabs.TabPages.AddRange(new[] { tabGeneral, tabPaths, tabMusic, tabInput });
 
@@ -1021,28 +1230,29 @@ namespace ArcadeShellConfigurator
             WireField("MusicEnabled", chkMusicEnabled);
             WireField("MusicRoot", txtMusicRoot);
             WireField("Volume", trkVolume);
+            WireField("ThumbVideoVolume", trkThumbVideoVolume);
             WireField("AudioDevice", cboAudioDevice);
+            WireField("PlayRandom", chkPlayRandom);
+            // ListBox is not handled by WireField — wire manually
+            lstMusicFiles.SelectedIndexChanged += (_, _) => { if (!_suppressDirty) AutoSave(); };
             WireField("DInputEnabled", chkDInputEnabled);
             WireField("XInputEnabled", chkXInputEnabled);
-            WireField("BtnSelect", numDInputButtonSelect);
-            WireField("BtnBack", numDInputButtonBack);
-            WireField("BtnLeft", numDInputButtonLeft);
-            WireField("BtnRight", numDInputButtonRight);
+            WireField("DInputDevice", cboDInputDevice);
+            // Button bindings are saved directly inside AssignButton — no WireField needed.
 
-            // Toggle test panels and DInput button mapping controls based on checkbox state
+            // Toggle controls inside each frame based on its own enable checkbox.
+            // The checkbox itself stays enabled so the user can always toggle it back on.
             void UpdateInputPanelState()
             {
                 bool di = chkDInputEnabled.Checked;
-                grpDI.Enabled = di;
-                numDInputButtonSelect.Enabled = di;
-                numDInputButtonBack.Enabled = di;
-                numDInputButtonLeft.Enabled = di;
-                numDInputButtonRight.Enabled = di;
-                if (!di) StopDInputTest();
+                foreach (Control c in grpDI.Controls)
+                    if (c != chkDInputEnabled) c.Enabled = di;
+                if (!di) { StopDInputTest(); CancelBind(); }
 
                 bool xi = chkXInputEnabled.Checked;
-                grpXI.Enabled = xi;
-                if (!xi) StopXInputTest();
+                    foreach (Control c in grpXI.Controls)
+                    if (c != chkXInputEnabled) c.Enabled = xi;
+                if (!xi) { StopXInputTest(); CancelXiBind(); }
             }
             chkDInputEnabled.CheckedChanged += (_, _) => UpdateInputPanelState();
             chkXInputEnabled.CheckedChanged += (_, _) => UpdateInputPanelState();
@@ -1117,21 +1327,58 @@ namespace ArcadeShellConfigurator
             {
                 StopMusicPreview();
 
-                if (_previewLibVlc == null)
+                var vlc = LibVLCManager.Instance;
+
+                _previewMedia = new LibVLCSharp.Shared.Media(vlc, fullPath, LibVLCSharp.Shared.FromType.FromPath);
+                try { _previewMedia.AddOption(":no-video"); } catch { }
+
+                _previewPlayer = new LibVLCSharp.Shared.MediaPlayer(vlc);
+
+                // Route audio to the configured device (same approach as MusicPlayer)
+                try
                 {
-                    LibVLCSharp.Shared.Core.Initialize();
-                    _previewLibVlc = new LibVLCSharp.Shared.LibVLC(
-                        "--no-osd", "--no-snapshot-preview", "--no-stats",
-                        "--no-sub-autodetect-file", "--no-metadata-network-access");
+                    _previewPlayer.SetAudioOutput("mmdevice");
+                    var selectedDevice = cboAudioDevice.SelectedItem?.ToString() ?? "";
+                    if (selectedDevice.EndsWith(" *")) selectedDevice = selectedDevice[..^2];
+                    if (cboAudioDevice.SelectedIndex > 0 && !string.IsNullOrWhiteSpace(selectedDevice))
+                    {
+                        var vlcDevs = vlc.AudioOutputDevices("mmdevice");
+                        if (vlcDevs != null)
+                        {
+                            foreach (var d in vlcDevs)
+                            {
+                                if (string.Equals(d.Description, selectedDevice, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    _previewPlayer.SetOutputDevice(d.DeviceIdentifier);
+                                    break;
+                                }
+                            }
+                        }
+                    }
                 }
+                catch { }
 
-                _previewPlayer = new LibVLCSharp.Shared.MediaPlayer(_previewLibVlc);
-                _previewPlayer.Volume = trkVolume.Value;
+                // Enforce volume once VLC actually starts playing (Play() is async)
+                var vol = trkVolume.Value;
+                _previewPlayer.Playing += (_, _) =>
+                {
+                    try { _previewPlayer.Volume = vol; } catch { }
+                };
+                _previewPlayer.EncounteredError += (_, _) =>
+                {
+                    BeginInvoke(() => lblStatusSave.Text = "Preview: playback error");
+                };
 
-                using var media = new LibVLCSharp.Shared.Media(_previewLibVlc, fullPath, LibVLCSharp.Shared.FromType.FromPath);
-                _previewPlayer.Play(media);
+                _previewPlayer.Media = _previewMedia;
+                _previewPlayer.Play();
+                _previewPlayer.Volume = vol;
+
+                lblStatusSave.Text = $"Playing: {Path.GetFileName(fullPath)}";
             }
-            catch { }
+            catch (Exception ex)
+            {
+                lblStatusSave.Text = $"Preview error: {ex.Message}";
+            }
         }
 
         private void StopMusicPreview()
@@ -1143,6 +1390,12 @@ namespace ArcadeShellConfigurator
                     _previewPlayer.Stop();
                     _previewPlayer.Dispose();
                     _previewPlayer = null;
+                }
+                // Dispose media AFTER player so VLC finishes any pending I/O
+                if (_previewMedia != null)
+                {
+                    _previewMedia.Dispose();
+                    _previewMedia = null;
                 }
             }
             catch { }
@@ -1370,14 +1623,22 @@ namespace ArcadeShellConfigurator
             txtMusicRoot.Text = _config.Music.MusicRoot ?? "";
             trkVolume.Value = Math.Clamp(_config.Music.Volume, 0, 100);
             lblVolumeValue.Text = $"{trkVolume.Value}%";
+            trkThumbVideoVolume.Value = Math.Clamp(_config.Music.ThumbVideoVolume, 0, 100);
+            lblThumbVideoVolumeValue.Text = $"{trkThumbVideoVolume.Value}%";
             chkPlayRandom.Checked = _config.Music.PlayRandom;
             lstMusicFiles.Enabled = !chkPlayRandom.Checked;
             RefreshMusicFileList();
-            // Select the saved file in the list
+            // Select the saved file in the list (case-insensitive to handle filesystem variations)
             if (!string.IsNullOrWhiteSpace(_config.Music.SelectedFile))
             {
-                var idx = lstMusicFiles.Items.IndexOf(_config.Music.SelectedFile);
-                if (idx >= 0) lstMusicFiles.SelectedIndex = idx;
+                for (int i = 0; i < lstMusicFiles.Items.Count; i++)
+                {
+                    if (string.Equals(lstMusicFiles.Items[i] as string, _config.Music.SelectedFile, StringComparison.OrdinalIgnoreCase))
+                    {
+                        lstMusicFiles.SelectedIndex = i;
+                        break;
+                    }
+                }
             }
             // Select the matching audio device in the dropdown
             var savedDevice = _config.Music.AudioDevice ?? "";
@@ -1399,23 +1660,36 @@ namespace ArcadeShellConfigurator
             // Input
             chkXInputEnabled.Checked = _config.Input.XInputEnabled;
             chkDInputEnabled.Checked = _config.Input.DInputEnabled;
+            // cboDInputDevice is populated by ScanDInputDevices() (called in Shown);
+            // just ensure a safe default until the scan completes.
+            if (cboDInputDevice.Items.Count == 0)
+                cboDInputDevice.Items.Add("(Primero disponible)");
+            cboDInputDevice.SelectedIndex = 0;
 
             // LEDBlinky
             chkLedBlinkyEnabled.Checked = _config.LedBlinky.Enabled;
             txtLedBlinkyExe.Text = _config.LedBlinky.ExePath;
             txtLedBlinkyExe.Enabled = chkLedBlinkyEnabled.Checked;
-            numDInputButtonSelect.Value = Math.Clamp(_config.Input.DInputButtonSelect, 1, 32);
-            numDInputButtonBack.Value   = Math.Clamp(_config.Input.DInputButtonBack,   1, 32);
-            numDInputButtonLeft.Value   = Math.Clamp(_config.Input.DInputButtonLeft,   0, 32);
-            numDInputButtonRight.Value  = Math.Clamp(_config.Input.DInputButtonRight,  0, 32);
 
-            // Sync test-panel enabled state with checkboxes
-            grpDI.Enabled = chkDInputEnabled.Checked;
-            numDInputButtonSelect.Enabled = chkDInputEnabled.Checked;
-            numDInputButtonBack.Enabled = chkDInputEnabled.Checked;
-            numDInputButtonLeft.Enabled = chkDInputEnabled.Checked;
-            numDInputButtonRight.Enabled = chkDInputEnabled.Checked;
-            grpXI.Enabled = chkXInputEnabled.Checked;
+            // Load saved button bindings into stored fields, then refresh binding display labels
+            _bindSelectBtn = Math.Max(1, _config.Input.DInputButtonSelect);
+            _bindBackBtn   = Math.Max(1, _config.Input.DInputButtonBack);
+            _bindLeftBtn   = Math.Max(0, _config.Input.DInputButtonLeft);
+            _bindRightBtn  = Math.Max(0, _config.Input.DInputButtonRight);
+            UpdateBindLabels();
+
+            // Load XInput button bindings
+            _xiBindSelectBtn = _config.Input.XInputButtonSelect;
+            _xiBindBackBtn   = _config.Input.XInputButtonBack;
+            _xiBindLeftBtn   = _config.Input.XInputButtonLeft;
+            _xiBindRightBtn  = _config.Input.XInputButtonRight;
+            UpdateXiBindLabels();
+
+            // Sync enabled state inside each frame (checkbox stays always enabled)
+            foreach (Control c in grpDI.Controls)
+                if (c != chkDInputEnabled) c.Enabled = chkDInputEnabled.Checked;
+            foreach (Control c in grpXI.Controls)
+                if (c != chkXInputEnabled) c.Enabled = chkXInputEnabled.Checked;
 
             // Options
             gridOptions.Rows.Clear();
@@ -1427,6 +1701,20 @@ namespace ArcadeShellConfigurator
             }
 
             _suppressDirty = false;
+
+            // Show metadata for the music file that was restored from config
+            if (!chkPlayRandom.Checked && lstMusicFiles.SelectedItem is string selFile)
+            {
+                var root = txtMusicRoot.Text;
+                if (!string.IsNullOrWhiteSpace(root))
+                {
+                    var fullPath = Path.IsPathRooted(root)
+                        ? Path.Combine(root, selFile)
+                        : Path.Combine(Path.GetDirectoryName(_configPath) ?? ".", root, selFile);
+                    if (File.Exists(fullPath))
+                        ShowTrackerMetadata(txtMetaInfo, fullPath);
+                }
+            }
         }
 
         private void CollectFromUI()
@@ -1442,8 +1730,9 @@ namespace ArcadeShellConfigurator
             _config.Music.Enabled = chkMusicEnabled.Checked;
             _config.Music.MusicRoot = txtMusicRoot.Text;
             _config.Music.Volume = trkVolume.Value;
+            _config.Music.ThumbVideoVolume = trkThumbVideoVolume.Value;
             _config.Music.PlayRandom = chkPlayRandom.Checked;
-            _config.Music.SelectedFile = lstMusicFiles.SelectedItem as string;
+            _config.Music.SelectedFile = chkPlayRandom.Checked ? "" : (lstMusicFiles.SelectedItem as string ?? "");
             var selectedDevice = cboAudioDevice.SelectedItem?.ToString() ?? "";
             if (selectedDevice.EndsWith(" *")) selectedDevice = selectedDevice[..^2];
             _config.Music.AudioDevice = (cboAudioDevice.SelectedIndex <= 0 || string.IsNullOrWhiteSpace(selectedDevice))
@@ -1451,10 +1740,21 @@ namespace ArcadeShellConfigurator
 
             _config.Input.XInputEnabled      = chkXInputEnabled.Checked;
             _config.Input.DInputEnabled      = chkDInputEnabled.Checked;
-            _config.Input.DInputButtonSelect = (int)numDInputButtonSelect.Value;
-            _config.Input.DInputButtonBack   = (int)numDInputButtonBack.Value;
-            _config.Input.DInputButtonLeft   = (int)numDInputButtonLeft.Value;
-            _config.Input.DInputButtonRight  = (int)numDInputButtonRight.Value;
+            _config.Input.DInputButtonSelect = _bindSelectBtn;
+            _config.Input.DInputButtonBack   = _bindBackBtn;
+            _config.Input.DInputButtonLeft   = _bindLeftBtn;
+            _config.Input.DInputButtonRight  = _bindRightBtn;
+            // Preferred DInput device: index 0 = "first found" = empty string
+            var devSel = cboDInputDevice.SelectedIndex;
+            _config.Input.DInputDeviceName = (devSel > 0 && devSel - 1 < _dinputDeviceList.Count)
+                ? _dinputDeviceList[devSel - 1].ProductName
+                : string.Empty;
+            // XInput slot: listbox index = slot number (0-3); -1 = first connected
+            _config.Input.XInputSlot          = lstXInputSlots.SelectedIndex >= 0 ? lstXInputSlots.SelectedIndex : -1;
+            _config.Input.XInputButtonSelect  = _xiBindSelectBtn;
+            _config.Input.XInputButtonBack    = _xiBindBackBtn;
+            _config.Input.XInputButtonLeft    = _xiBindLeftBtn;
+            _config.Input.XInputButtonRight   = _xiBindRightBtn;
 
             _config.LedBlinky.Enabled = chkLedBlinkyEnabled.Checked;
             _config.LedBlinky.ExePath = txtLedBlinkyExe.Text;
@@ -1505,8 +1805,10 @@ namespace ArcadeShellConfigurator
                 foreach (var path in paths)
                     File.WriteAllText(path, json);
 
-                // Flash save confirmation in the status bar
-                lblStatusSave.Text = $"✓ Saved ({paths.Count} file{(paths.Count > 1 ? "s" : "")})";
+                // Flash save confirmation in the status bar — include selectedFile for visibility
+                var sel = _config.Music.SelectedFile;
+                var selInfo = string.IsNullOrEmpty(sel) ? "" : $" | music={sel}";
+                lblStatusSave.Text = $"Saved ({paths.Count} file{(paths.Count > 1 ? "s" : "")}){selInfo}";
                 var fadeTimer = new System.Windows.Forms.Timer { Interval = 2000 };
                 fadeTimer.Tick += (_, _) => { lblStatusSave.Text = ""; fadeTimer.Dispose(); };
                 fadeTimer.Start();
@@ -1887,8 +2189,6 @@ namespace ArcadeShellConfigurator
         private void ScanDInputDevices()
         {
             _dinputDeviceList.Clear();
-            lstDInputDevices.Items.Clear();
-            lstDInputDevices.Items.Add("Escaneando\u2026");
 
             Task.Run(() =>
             {
@@ -1909,26 +2209,27 @@ namespace ArcadeShellConfigurator
 
                 BeginInvoke(() =>
                 {
-                    lstDInputDevices.Items.Clear();
                     _dinputDeviceList.Clear();
-                    if (error != null)
-                    {
-                        lstDInputDevices.Items.Add($"Error: {error}");
-                    }
-                    else if (found.Count == 0)
-                    {
-                        lstDInputDevices.Items.Add("(ningún dispositivo encontrado)");
-                    }
-                    else
-                    {
+                    if (error == null)
                         foreach (var d in found)
-                        {
                             _dinputDeviceList.Add(d);
-                            var (vid, pid) = ExtractVidPid(d.ProductGuid);
-                            lstDInputDevices.Items.Add($"[VID:{vid:X4} PID:{pid:X4}]  {d.ProductName}");
-                        }
-                        lstDInputDevices.SelectedIndex = 0;
+
+                    // Rebuild the "active device" combo — index 0 = first found (default)
+                    _suppressDirty = true;
+                    cboDInputDevice.Items.Clear();
+                    cboDInputDevice.Items.Add("(Primero disponible)");
+                    int comboSel = 0;
+                    var savedName = _config.Input.DInputDeviceName;
+                    foreach (var d in _dinputDeviceList)
+                    {
+                        var (vid, pid) = ExtractVidPid(d.ProductGuid);
+                        cboDInputDevice.Items.Add($"[VID:{vid:X4} PID:{pid:X4}]  {d.ProductName}");
+                        if (!string.IsNullOrWhiteSpace(savedName) &&
+                            string.Equals(d.ProductName, savedName, StringComparison.OrdinalIgnoreCase))
+                            comboSel = cboDInputDevice.Items.Count - 1;
                     }
+                    cboDInputDevice.SelectedIndex = comboSel;
+                    _suppressDirty = false;
                 });
             });
         }
@@ -1962,7 +2263,12 @@ namespace ArcadeShellConfigurator
                 {
                     lstXInputSlots.Items.Clear();
                     foreach (var l in lines) lstXInputSlots.Items.Add(l);
-                    if (firstConnected >= 0) lstXInputSlots.SelectedIndex = firstConnected;
+                    // Prefer the configured slot; fall back to first connected
+                    int configuredSlot = _config.Input.XInputSlot;
+                    if (configuredSlot >= 0 && configuredSlot < lstXInputSlots.Items.Count)
+                        lstXInputSlots.SelectedIndex = configuredSlot;
+                    else if (firstConnected >= 0)
+                        lstXInputSlots.SelectedIndex = firstConnected;
                 });
             });
         }
@@ -1995,8 +2301,9 @@ namespace ArcadeShellConfigurator
                 return;
             }
 
-            int sel = lstDInputDevices.SelectedIndex;
-            var deviceInfo = _dinputDeviceList[sel >= 0 && sel < _dinputDeviceList.Count ? sel : 0];
+            // Use the device chosen in "Dispositivo activo" (index 0 = first found)
+            int comboSel = cboDInputDevice.SelectedIndex - 1; // index 0 is "(Primero disponible)"
+            var deviceInfo = _dinputDeviceList[comboSel >= 0 && comboSel < _dinputDeviceList.Count ? comboSel : 0];
             try
             {
                 _testDInput = new DirectInput();
@@ -2085,7 +2392,7 @@ namespace ArcadeShellConfigurator
                 btnTestXInput.Text    = "\u25b6 Iniciar";
                 lblXInputStatus.Text  = "Activo: \u2014";
                 lblXInputButtons.Text = "Botones: \u2014";
-                lblXInputAxes.Text    = "LX: \u2014 | LY: \u2014 | LT: \u2014 | RT: \u2014";
+                lblXInputAxes.Text    = "LX: \u2014 | LY: \u2014 | RX: \u2014 | RY: \u2014 | LT: \u2014 | RT: \u2014";
                 return;
             }
 
@@ -2127,7 +2434,7 @@ namespace ArcadeShellConfigurator
             {
                 lblXInputStatus.Text  = "Activo: desconectado";
                 lblXInputButtons.Text = "Botones: \u2014";
-                lblXInputAxes.Text    = "LX: \u2014 | LY: \u2014 | LT: \u2014 | RT: \u2014";
+                lblXInputAxes.Text    = "LX: \u2014 | LY: \u2014 | RX: \u2014 | RY: \u2014 | LT: \u2014 | RT: \u2014";
                 visualXInput?.Reset();
                 return;
             }
@@ -2142,12 +2449,14 @@ namespace ArcadeShellConfigurator
                 : "Botones: \u2014";
 
             lblXInputAxes.Text =
-                $"LX: {gp.LeftThumbX,6} | LY: {gp.LeftThumbY,6} | LT: {gp.LeftTrigger,3} | RT: {gp.RightTrigger,3}";
+                $"LX: {gp.LeftThumbX,6} | LY: {gp.LeftThumbY,6} | RX: {gp.RightThumbX,6} | RY: {gp.RightThumbY,6} | LT: {gp.LeftTrigger,3} | RT: {gp.RightTrigger,3}";
 
             // Update visual panel
-            float normX = gp.LeftThumbX / 32767f;
-            float normY = gp.LeftThumbY / 32767f;
-            visualXInput.UpdateXInput(normX, normY, gp.LeftTrigger, gp.RightTrigger, pressed);
+            float normX  = gp.LeftThumbX  / 32767f;
+            float normY  = gp.LeftThumbY  / 32767f;
+            float normRX = gp.RightThumbX / 32767f;
+            float normRY = gp.RightThumbY / 32767f;
+            visualXInput.UpdateXInput(normX, normY, normRX, normRY, gp.LeftTrigger, gp.RightTrigger, pressed);
         }
 
         private void StopXInputTest()
@@ -2158,6 +2467,345 @@ namespace ArcadeShellConfigurator
             visualXInput?.Reset();
         }
 
+        // --- Interactive button binding ---
+
+        private Label MakeSectionLabel(string text, Point location) => new Label
+        {
+            Text = text,
+            Location = location,
+            AutoSize = true,
+            Font = new Font(Font.FontFamily, 8f, FontStyle.Bold),
+            ForeColor = SystemColors.GrayText,
+        };
+
+        private static string FormatBindLabel(int btn, bool allowAxis) =>
+            btn <= 0 && allowAxis ? "Eje / POV" : $"Botón {btn}";
+
+        private void UpdateBindLabels()
+        {
+            lblBindSelect.Text = FormatBindLabel(_bindSelectBtn, false);
+            lblBindBack.Text   = FormatBindLabel(_bindBackBtn,   false);
+            lblBindLeft.Text   = FormatBindLabel(_bindLeftBtn,   true);
+            lblBindRight.Text  = FormatBindLabel(_bindRightBtn,  true);
+        }
+
+        private void StartBind(int target)
+        {
+            // Stop any active device test so we can acquire exclusively
+            if (_testTimer != null)
+            {
+                StopDInputTest();
+                btnTestDInput.Text  = "▶ Iniciar";
+                lblTestDevice.Text  = "Activo: —";
+                lblTestButtons.Text = "Botones: —";
+                lblTestAxes.Text    = "Eje X: — | Eje Y: — | POV: —";
+            }
+            CancelBind(); // clean up any previous binding session
+
+            // Resolve which device to listen on
+            DeviceInstance? di = null;
+            int devIdx = cboDInputDevice.SelectedIndex - 1; // index 0 = "first available"
+            if (devIdx >= 0 && devIdx < _dinputDeviceList.Count)
+                di = _dinputDeviceList[devIdx];
+            else if (_dinputDeviceList.Count > 0)
+                di = _dinputDeviceList[0];
+
+            if (di == null)
+            {
+                MessageBox.Show(
+                    "No se encontró ningún dispositivo DirectInput.\nConecte el dispositivo y pulse ‘↻ Escanear’.",
+                    "Sin dispositivo", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            try
+            {
+                _bindDInput   = new DirectInput();
+                _bindJoystick = new Joystick(_bindDInput, di.InstanceGuid);
+                _bindJoystick.SetCooperativeLevel(Handle, CooperativeLevel.Background | CooperativeLevel.NonExclusive);
+                _bindJoystick.Acquire();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error al conectar dispositivo:\n{ex.Message}",
+                    "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                CancelBind();
+                return;
+            }
+
+            _bindingTarget   = target;
+            _bindLastButtons = Array.Empty<bool>();
+            _bindCountdown   = 100; // 100 × 50 ms = 5 s
+
+            // Highlight active button; disable the others to avoid confusion
+            foreach (var (tgt, btn) in new[] {
+                (0, btnBindSelect), (1, btnBindBack), (2, btnBindLeft), (3, btnBindRight) })
+            {
+                btn.Text    = tgt == target ? "● 5s…" : "⊕ Asignar";
+                btn.Enabled = tgt == target; // click again to cancel
+            }
+
+            _bindTimer = new System.Windows.Forms.Timer { Interval = 50 };
+            _bindTimer.Tick += BindTimer_Tick;
+            _bindTimer.Start();
+        }
+
+        private void BindTimer_Tick(object? sender, EventArgs e)
+        {
+            _bindCountdown--;
+            int secs = Math.Max(0, (_bindCountdown + 19) / 20);
+            var activeBtn = _bindingTarget switch {
+                0 => btnBindSelect, 1 => btnBindBack,
+                2 => btnBindLeft,   3 => btnBindRight, _ => null };
+            if (activeBtn != null) activeBtn.Text = secs > 0 ? $"● {secs}s…" : "● …";
+
+            if (_bindJoystick == null) { CancelBind(); return; }
+            try
+            {
+                _bindJoystick.Poll();
+                var state   = _bindJoystick.GetCurrentState();
+                var buttons = state.Buttons;
+
+                if (_bindLastButtons.Length != buttons.Length)
+                    _bindLastButtons = new bool[buttons.Length];
+
+                // Rising-edge detection: first button pressed wins
+                for (int i = 0; i < buttons.Length; i++)
+                {
+                    if (buttons[i] && !_bindLastButtons[i])
+                    {
+                        AssignButton(_bindingTarget, i + 1); // 1-based
+                        return;
+                    }
+                }
+
+                // For Left/Right: also accept joystick axis or POV movement → record as 0
+                if (_bindingTarget == 2 || _bindingTarget == 3)
+                {
+                    const int center   = 32767;
+                    const int deadzone = 20000;
+                    bool axisActive = Math.Abs(state.X - center) > deadzone;
+                    var  pov        = state.PointOfViewControllers;
+                    bool povActive  = pov != null && pov.Length > 0 && pov[0] != -1;
+                    if (axisActive || povActive)
+                    {
+                        AssignButton(_bindingTarget, 0); // 0 = use axis/POV
+                        return;
+                    }
+                }
+
+                Array.Copy(buttons, _bindLastButtons, buttons.Length);
+            }
+            catch (SharpDX.SharpDXException)
+            {
+                try { _bindJoystick?.Acquire(); } catch { }
+            }
+
+            if (_bindCountdown <= 0) CancelBind();
+        }
+
+        private void AssignButton(int target, int buttonNum)
+        {
+            switch (target)
+            {
+                case 0: _bindSelectBtn = Math.Max(1, buttonNum); break;
+                case 1: _bindBackBtn   = Math.Max(1, buttonNum); break;
+                case 2: _bindLeftBtn   = buttonNum; break; // 0 = axis/POV is valid
+                case 3: _bindRightBtn  = buttonNum; break;
+            }
+            UpdateBindLabels();
+            FlashLabel(GetDiBindLabel(target));
+            StopBind();
+            AutoSave();
+        }
+
+        private void StopBind()
+        {
+            _bindTimer?.Stop();
+            _bindTimer?.Dispose();
+            _bindTimer      = null;
+            _bindingTarget  = -1;
+            try { _bindJoystick?.Unacquire(); } catch { }
+            _bindJoystick?.Dispose();
+            _bindJoystick = null;
+            _bindDInput?.Dispose();
+            _bindDInput = null;
+            if (!IsDisposed)
+            {
+                bool di = chkDInputEnabled.Checked;
+                btnBindSelect.Text = "⊕ Asignar"; btnBindSelect.Enabled = di;
+                btnBindBack.Text   = "⊕ Asignar"; btnBindBack.Enabled   = di;
+                btnBindLeft.Text   = "⊕ Asignar"; btnBindLeft.Enabled   = di;
+                btnBindRight.Text  = "⊕ Asignar"; btnBindRight.Enabled  = di;
+            }
+        }
+
+        private void CancelBind()
+        {
+            if (_bindTimer == null) return; // nothing active
+            StopBind();
+        }
+
+        // ─── XInput interactive button binding ───────────────────────────────
+
+        private static string FormatXiBindLabel(int flags, bool allowAxis)
+        {
+            if (flags == 0) return allowAxis ? "DPad / Palanca" : "—";
+            return (GamepadButtonFlags)flags switch
+            {
+                GamepadButtonFlags.A             => "A",
+                GamepadButtonFlags.B             => "B",
+                GamepadButtonFlags.X             => "X",
+                GamepadButtonFlags.Y             => "Y",
+                GamepadButtonFlags.Start         => "Start",
+                GamepadButtonFlags.Back          => "Back",
+                GamepadButtonFlags.LeftShoulder  => "LB",
+                GamepadButtonFlags.RightShoulder => "RB",
+                GamepadButtonFlags.LeftThumb     => "LS",
+                GamepadButtonFlags.RightThumb    => "RS",
+                GamepadButtonFlags.DPadUp        => "↑ DPad",
+                GamepadButtonFlags.DPadDown      => "↓ DPad",
+                GamepadButtonFlags.DPadLeft      => "← DPad",
+                GamepadButtonFlags.DPadRight     => "→ DPad",
+                _                                => $"0x{flags:X4}"
+            };
+        }
+
+        private void UpdateXiBindLabels()
+        {
+            lblXiBindSelect.Text = FormatXiBindLabel(_xiBindSelectBtn, false);
+            lblXiBindBack.Text   = FormatXiBindLabel(_xiBindBackBtn,   false);
+            lblXiBindLeft.Text   = FormatXiBindLabel(_xiBindLeftBtn,   true);
+            lblXiBindRight.Text  = FormatXiBindLabel(_xiBindRightBtn,  true);
+        }
+
+        private Button GetXiBindButton(int target) => target switch
+        {
+            0 => btnXiBindSelect,
+            1 => btnXiBindBack,
+            2 => btnXiBindLeft,
+            _ => btnXiBindRight
+        };
+
+        private Label GetDiBindLabel(int target) => target switch
+        {
+            0 => lblBindSelect,
+            1 => lblBindBack,
+            2 => lblBindLeft,
+            _ => lblBindRight
+        };
+
+        private Label GetXiBindLabel(int target) => target switch
+        {
+            0 => lblXiBindSelect,
+            1 => lblXiBindBack,
+            2 => lblXiBindLeft,
+            _ => lblXiBindRight
+        };
+
+        /// <summary>Briefly flashes a label green to confirm a button was assigned.</summary>
+        private void FlashLabel(Label lbl)
+        {
+            lbl.BackColor = Color.FromArgb(50, 255, 100);
+            lbl.ForeColor = Color.White;
+            var t = new System.Windows.Forms.Timer { Interval = 700 };
+            t.Tick += (_, _) =>
+            {
+                t.Stop();
+                t.Dispose();
+                if (!lbl.IsDisposed)
+                {
+                    lbl.BackColor = SystemColors.Control;
+                    lbl.ForeColor = SystemColors.ControlText;
+                }
+            };
+            t.Start();
+        }
+
+        private void StartXiBind(int target)
+        {
+            StopXiBind(); // cancel any previous assign session
+            _xiBindingTarget = target;
+            _xiBindCountdown = 50; // 50 × 100 ms = 5 s
+
+            _xiBindSlot = lstXInputSlots.SelectedIndex >= 0 ? lstXInputSlots.SelectedIndex : 0;
+            var ctrl = new Controller((UserIndex)_xiBindSlot);
+            if (!ctrl.IsConnected)
+            {
+                MessageBox.Show($"El slot {_xiBindSlot + 1} no está conectado.", "XInput",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                _xiBindingTarget = -1;
+                return;
+            }
+            _xiBindLastButtons = ctrl.GetState().Gamepad.Buttons;
+
+            GetXiBindButton(target).Text = "✕ (5s)";
+
+            _xiBindTimer = new System.Windows.Forms.Timer { Interval = 100 };
+            _xiBindTimer.Tick += XiBindTimer_Tick;
+            _xiBindTimer.Start();
+        }
+
+        private void XiBindTimer_Tick(object? sender, EventArgs e)
+        {
+            _xiBindCountdown--;
+            int secsLeft = (_xiBindCountdown + 9) / 10; // ceiling: 50→5, 40→4…
+            GetXiBindButton(_xiBindingTarget).Text = $"✕ ({secsLeft}s)";
+
+            var ctrl = new Controller((UserIndex)_xiBindSlot);
+            if (ctrl.IsConnected)
+            {
+                var currentButtons = ctrl.GetState().Gamepad.Buttons;
+                var newlyPressed   = currentButtons & ~_xiBindLastButtons;
+                _xiBindLastButtons = currentButtons;
+                if (newlyPressed != GamepadButtonFlags.None)
+                {
+                    // isolate lowest set bit so we assign exactly one button
+                    int lowestBit = (int)newlyPressed & -(int)newlyPressed;
+                    AssignXiButton(_xiBindingTarget, lowestBit);
+                    return;
+                }
+            }
+
+            if (_xiBindCountdown <= 0) StopXiBind();
+        }
+
+        private void AssignXiButton(int target, int flagValue)
+        {
+            switch (target)
+            {
+                case 0: _xiBindSelectBtn = flagValue; break;
+                case 1: _xiBindBackBtn   = flagValue; break;
+                case 2: _xiBindLeftBtn   = flagValue; break;
+                case 3: _xiBindRightBtn  = flagValue; break;
+            }
+            StopXiBind();
+            UpdateXiBindLabels();
+            FlashLabel(GetXiBindLabel(target));
+            AutoSave();
+        }
+
+        private void StopXiBind()
+        {
+            if (_xiBindTimer != null)
+            {
+                _xiBindTimer.Stop();
+                _xiBindTimer.Tick -= XiBindTimer_Tick;
+                _xiBindTimer.Dispose();
+                _xiBindTimer = null;
+            }
+            if (_xiBindingTarget >= 0)
+            {
+                GetXiBindButton(_xiBindingTarget).Text = "\u2295 Asignar";
+                _xiBindingTarget = -1;
+            }
+        }
+
+        private void CancelXiBind()
+        {
+            if (_xiBindingTarget >= 0) StopXiBind();
+        }
+
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
             StopVideoPreview();
@@ -2166,13 +2814,51 @@ namespace ArcadeShellConfigurator
             try { _previewLibVlc?.Dispose(); } catch { }
             StopDInputTest();
             StopXInputTest();
+            CancelBind();
+            CancelXiBind();
             _logWatcher?.Dispose();
             _logRefreshTimer?.Stop();
             _logRefreshTimer?.Dispose();
+            _deviceRescanTimer?.Stop();
+            _deviceRescanTimer?.Dispose();
             base.OnFormClosed(e);
         }
 
-        // --- Log viewer ---
+        // ── WM_DEVICECHANGE auto-rescan ───────────────────────────────────────
+        // Windows sends 0x0219 (WM_DEVICECHANGE) whenever a USB device is
+        // plugged or unplugged.  We debounce with a 600 ms one-shot timer so
+        // rapid re-connections don’t flood the scan code.
+        private const int WM_DEVICECHANGE      = 0x0219;
+        private const int DBT_DEVICEARRIVAL    = 0x8000;
+        private const int DBT_DEVICEREMOVECOMPLETE = 0x8004;
+
+        protected override void WndProc(ref Message m)
+        {
+            base.WndProc(ref m);
+            if (m.Msg == WM_DEVICECHANGE)
+            {
+                int wParam = m.WParam.ToInt32();
+                if (wParam == DBT_DEVICEARRIVAL || wParam == DBT_DEVICEREMOVECOMPLETE)
+                    ScheduleDeviceRescan();
+            }
+        }
+
+        private void ScheduleDeviceRescan()
+        {
+            // Restart the debounce timer — fires 600 ms after the last event
+            if (_deviceRescanTimer == null)
+            {
+                _deviceRescanTimer = new System.Windows.Forms.Timer { Interval = 600 };
+                _deviceRescanTimer.Tick += (_, _) =>
+                {
+                    _deviceRescanTimer.Stop();
+                    ScanDInputDevices();
+                    ScanXInputSlots();
+                };
+            }
+            _deviceRescanTimer.Stop();
+            _deviceRescanTimer.Start();
+        }
 
         private void InitLogWatcher()
         {

@@ -28,7 +28,10 @@ namespace ArcadeShellSelector
         private Joystick? _dinputJoystick;
         private System.Windows.Forms.Timer? _dinputTimer;
         private bool[] _lastDInputButtons = Array.Empty<bool>();
-        private DateTime _dinputAxisLastMove = DateTime.MinValue;
+        // Timestamp of the last accepted navigation move — used as a global debounce/cooldown
+        // to prevent noisy arcade encoder signals from looping selections erratically.
+        private DateTime _lastNavTime = DateTime.MinValue;
+        private int _lastDInputAxisDir; // -1 = left, 0 = center, 1 = right
         private bool _lastXInputStickLeft;
         private bool _lastXInputStickRight;
         private readonly AppConfig config;
@@ -75,7 +78,16 @@ namespace ArcadeShellSelector
             InitializeControls();
 
             // Initialize XInput (only if enabled in config)
-            xinputController = new Controller(UserIndex.One);
+            {
+                int slot = config.Input.XInputSlot;
+                if (slot < 0 || slot > 3)
+                {
+                    slot = 0; // fallback — find first connected
+                    for (int i = 0; i < 4; i++)
+                        if (new Controller((UserIndex)i).IsConnected) { slot = i; break; }
+                }
+                xinputController = new Controller((UserIndex)slot);
+            }
             xinputTimer = new System.Windows.Forms.Timer();
             xinputTimer.Interval = 100;
             xinputTimer.Tick += XinputTimer_Tick;
@@ -104,13 +116,32 @@ namespace ArcadeShellSelector
             var gp = state.Gamepad;
             var buttons = gp.Buttons;
 
-            // Navigation: DPad Left/Right
-            if ((buttons & GamepadButtonFlags.DPadLeft) != 0 && (lastButtons & GamepadButtonFlags.DPadLeft) == 0)
-                MoveSelection(-1);
-            if ((buttons & GamepadButtonFlags.DPadRight) != 0 && (lastButtons & GamepadButtonFlags.DPadRight) == 0)
-                MoveSelection(1);
+            var selectFlag = (GamepadButtonFlags)config.Input.XInputButtonSelect;
+            var backFlag   = (GamepadButtonFlags)config.Input.XInputButtonBack;
+            var leftFlag   = (GamepadButtonFlags)config.Input.XInputButtonLeft;
+            var rightFlag  = (GamepadButtonFlags)config.Input.XInputButtonRight;
 
-            // Navigation: Left stick with deadzone
+            // Navigation: configured button or DPad Left/Right (0 = DPad/axis mode)
+            if (leftFlag != 0)
+            {
+                if ((buttons & leftFlag) != 0 && (lastButtons & leftFlag) == 0) MoveSelection(-1);
+            }
+            else
+            {
+                if ((buttons & GamepadButtonFlags.DPadLeft) != 0 && (lastButtons & GamepadButtonFlags.DPadLeft) == 0)
+                    MoveSelection(-1);
+            }
+            if (rightFlag != 0)
+            {
+                if ((buttons & rightFlag) != 0 && (lastButtons & rightFlag) == 0) MoveSelection(1);
+            }
+            else
+            {
+                if ((buttons & GamepadButtonFlags.DPadRight) != 0 && (lastButtons & GamepadButtonFlags.DPadRight) == 0)
+                    MoveSelection(1);
+            }
+
+            // Left stick axis — only active when the corresponding direction is in DPad/axis mode
             const short stickDeadzone = 16000; // ~49% of 32767
             bool stickLeft  = gp.LeftThumbX < -stickDeadzone;
             bool stickRight = gp.LeftThumbX >  stickDeadzone;
@@ -118,19 +149,21 @@ namespace ArcadeShellSelector
             bool wasStickRight = _lastXInputStickRight;
             _lastXInputStickLeft  = stickLeft;
             _lastXInputStickRight = stickRight;
-            if (stickLeft && !wasStickLeft)   MoveSelection(-1);
-            if (stickRight && !wasStickRight) MoveSelection(1);
+            if (leftFlag  == 0 && stickLeft  && !wasStickLeft)  MoveSelection(-1);
+            if (rightFlag == 0 && stickRight && !wasStickRight) MoveSelection(1);
 
-            // Select: A button
-            if ((buttons & GamepadButtonFlags.A) != 0 && (lastButtons & GamepadButtonFlags.A) == 0)
+            // Select
+            if ((buttons & selectFlag) != 0 && (lastButtons & selectFlag) == 0)
                 SelectCurrentOption();
 
-            // Close: B button or Start
-            if ((buttons & GamepadButtonFlags.B) != 0 && (lastButtons & GamepadButtonFlags.B) == 0)
+            // Back/Close
+            if ((buttons & backFlag) != 0 && (lastButtons & backFlag) == 0)
                 Close();
 
-            if ((buttons & GamepadButtonFlags.Start) != 0 && (lastButtons & GamepadButtonFlags.Start) == 0)
-                Close();
+            // Start always closes as an escape hatch (unless already mapped to it)
+            if (backFlag != GamepadButtonFlags.Start)
+                if ((buttons & GamepadButtonFlags.Start) != 0 && (lastButtons & GamepadButtonFlags.Start) == 0)
+                    Close();
 
             lastButtons = buttons;
         }
@@ -180,8 +213,15 @@ namespace ArcadeShellSelector
                     return;
                 }
 
-                DebugLogger.Log("DInput", $"Acquiring: {devices[0].ProductName}");
-                var joystick = new Joystick(_directInput, devices[0].InstanceGuid);
+                // Pick preferred device by name if configured; fall back to first found.
+                // This lets multi-board arcade cabinets (e.g. two Zero Delay encoders)
+                // pin the launcher to the correct controller board.
+                var preferred = (!string.IsNullOrWhiteSpace(config.Input.DInputDeviceName)
+                    ? devices.FirstOrDefault(d => string.Equals(d.ProductName,
+                          config.Input.DInputDeviceName, StringComparison.OrdinalIgnoreCase))
+                    : null) ?? devices[0];
+                DebugLogger.Log("DInput", $"Using: {preferred.ProductName}{(preferred == devices[0] && !string.IsNullOrWhiteSpace(config.Input.DInputDeviceName) ? " (preferred not found, fell back to first)" : "")}");
+                var joystick = new Joystick(_directInput, preferred.InstanceGuid);
                 joystick.SetCooperativeLevel(Handle, CooperativeLevel.Background | CooperativeLevel.NonExclusive);
                 joystick.Acquire();
                 _dinputJoystick = joystick;
@@ -221,15 +261,20 @@ namespace ArcadeShellSelector
                 if (rightIdx >= 0 && rightIdx < buttons.Length && buttons[rightIdx] && !_lastDInputButtons[rightIdx])
                     MoveSelection(1);
 
-                // Axis / POV hat navigation with 300 ms cooldown (always active)
-                bool canMove = (DateTime.UtcNow - _dinputAxisLastMove).TotalMilliseconds > 300;
-                if (canMove && leftIdx < 0 && rightIdx < 0) // skip if buttons cover left/right
+                // Axis / POV hat navigation — edge-triggered: fires once on deflection,
+                // must return to center before firing again. Prevents auto-sweep when held.
+                if (leftIdx < 0 && rightIdx < 0) // skip if buttons cover left/right
                 {
-                    const int deadzone = 16384; // ~50 % of ±32767
-                    if (state.X < -deadzone)
-                    { MoveSelection(-1); _dinputAxisLastMove = DateTime.UtcNow; }
-                    else if (state.X > deadzone)
-                    { MoveSelection(1); _dinputAxisLastMove = DateTime.UtcNow; }
+                    int axisDir = 0; // current direction: -1 left, 0 center, 1 right
+
+                    // SharpDX JoystickState axes are 0–65535, center ≈ 32767
+                    const int center = 32767;
+                    const int deadzone = 16384; // ~50% of half-range
+                    int xOffset = state.X - center;
+                    if (xOffset < -deadzone)
+                        axisDir = -1;
+                    else if (xOffset > deadzone)
+                        axisDir = 1;
                     else
                     {
                         // POV / hat switch (value in 1/100 degrees; -1 = centred)
@@ -237,11 +282,16 @@ namespace ArcadeShellSelector
                         if (pov != null && pov.Length > 0 && pov[0] != -1)
                         {
                             if (pov[0] > 22500 && pov[0] < 31500)      // ~270° = left
-                            { MoveSelection(-1); _dinputAxisLastMove = DateTime.UtcNow; }
+                                axisDir = -1;
                             else if (pov[0] > 4500 && pov[0] < 13500)  // ~90°  = right
-                            { MoveSelection(1); _dinputAxisLastMove = DateTime.UtcNow; }
+                                axisDir = 1;
                         }
                     }
+
+                    // Only fire on transition from center (0) to a direction
+                    if (axisDir != 0 && _lastDInputAxisDir == 0)
+                        MoveSelection(axisDir);
+                    _lastDInputAxisDir = axisDir;
                 }
 
                 // Select / confirm
@@ -264,6 +314,13 @@ namespace ArcadeShellSelector
         private void MoveSelection(int direction)
         {
             if (optionUis.Count == 0) return;
+
+            // Global navigation cooldown: prevents noisy arcade encoder signals (bouncing
+            // axis / POV) from firing MoveSelection many times per physical joystick move.
+            var now = DateTime.UtcNow;
+            if ((now - _lastNavTime).TotalMilliseconds < config.Input.NavCooldownMs) return;
+            _lastNavTime = now;
+
             int idx = selectedPic == null ? 0 : optionUis.FindIndex(x => x.Pic == selectedPic);
             idx = (idx + direction + optionUis.Count) % optionUis.Count;
             selectedPic = optionUis[idx].Pic;
@@ -1067,11 +1124,10 @@ namespace ArcadeShellSelector
 
             try
             {
+                var thumbVol = config.Music?.ThumbVideoVolume ?? 0;
                 if (_thumbPlayer == null)
                 {
-                    // Separate LibVLC instance with audio fully disabled so it
-                    // cannot interfere with the main music player's output.
-                    _thumbLibVlc = new LibVLC("--no-audio");
+                    _thumbLibVlc = thumbVol > 0 ? new LibVLC() : new LibVLC("--no-audio");
                     _thumbPlayer = new MediaPlayer(_thumbLibVlc);
                     _thumbPlayer.EndReached += (_, __) =>
                     {
@@ -1081,6 +1137,13 @@ namespace ArcadeShellSelector
                             try { _thumbPlayer?.Play(); } catch { }
                         });
                     };
+                    if (thumbVol > 0)
+                    {
+                        _thumbPlayer.Playing += (_, __) =>
+                        {
+                            try { _thumbPlayer.Volume = config.Music?.ThumbVideoVolume ?? 0; } catch { }
+                        };
+                    }
                 }
                 else
                 {
@@ -1098,6 +1161,10 @@ namespace ArcadeShellSelector
                 _thumbMedia.AddOption(":input-repeat=65535"); // loop virtually forever
                 _thumbPlayer.Media = _thumbMedia;
                 _thumbPlayer.Play();
+
+                // Duck music volume while thumb video is playing
+                if (thumbVol > 0 && musicPlayer != null)
+                    musicPlayer.SetVolume(Math.Max(musicPlayer.ConfiguredVolume / 4, 10));
             }
             catch { }
         }
@@ -1149,6 +1216,10 @@ namespace ArcadeShellSelector
             {
                 try { Task.Run(() => { try { _thumbPlayer.Stop(); } catch { } }).Wait(500); } catch { }
             }
+
+            // Restore music volume after thumb video stops
+            if (musicPlayer != null)
+                musicPlayer.SetVolume(musicPlayer.ConfiguredVolume);
 
             // Restore original image
             if (pic != null && _thumbOriginalImages.TryGetValue(pic, out var orig))
