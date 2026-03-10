@@ -62,16 +62,26 @@ namespace ArcadeShellSelector
         private CancellationTokenSource? _musicDiagCts;
         private System.Windows.Forms.Timer? _zOrderTimer;
 
-        public Launcher()
+        public Launcher(AppConfig? preloadedConfig = null)
         {
-            var configPath = Path.Combine(AppContext.BaseDirectory, "config.json");
-            var (cfg, err) = AppConfig.TryLoadFromFile(configPath);
-            if (cfg == null)
+            AppConfig? cfg;
+            if (preloadedConfig != null)
             {
-                MessageBox.Show(err ?? "Unknown config error.", "Config error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                Environment.Exit(1);
+                cfg = preloadedConfig;
             }
-            config = cfg;
+            else
+            {
+                var configPath = Path.Combine(AppContext.BaseDirectory, "config.json");
+                string? loadErr;
+                (cfg, loadErr) = AppConfig.TryLoadFromFile(configPath);
+                if (cfg == null)
+                {
+                    MessageBox.Show(loadErr ?? "Unknown config error.", "Config error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    Environment.Exit(1);
+                    return;
+                }
+            }
+            config = cfg!;
             DebugLogger.Init(config.Activa.Activa);
 
             InitializeForm();

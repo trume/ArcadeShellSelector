@@ -1,4 +1,5 @@
 using System;
+using System.ComponentModel;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
@@ -33,6 +34,14 @@ namespace ArcadeShellConfigurator
         private bool _isXInput;
         private string[] _xinputButtonNames = Array.Empty<string>();
 
+        /// <summary>Force XInput layout even when idle (before the first UpdateXInput call).</summary>
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public bool XInputMode
+        {
+            get => _isXInput;
+            set { _isXInput = value; Invalidate(); }
+        }
+
         public InputVisualPanel()
         {
             DoubleBuffered = true;
@@ -66,7 +75,7 @@ namespace ArcadeShellConfigurator
             Invalidate();
         }
 
-        /// <summary>Reset to idle state.</summary>
+        /// <summary>Reset to idle state (preserves XInputMode).</summary>
         public void Reset()
         {
             _stickX = 0; _stickY = 0;
@@ -75,6 +84,7 @@ namespace ArcadeShellConfigurator
             _buttons = Array.Empty<bool>();
             _xinputButtonNames = Array.Empty<string>();
             _leftTrigger = 0; _rightTrigger = 0;
+            // _isXInput intentionally NOT reset — preserves XInputMode
             Invalidate();
         }
 

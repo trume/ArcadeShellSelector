@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-03-10
+
+### Fixed
+- **XInput test panel shows wrong layout when idle** — `InputVisualPanel` defaulted to DInput mode (`_isXInput = false`), drawing a single STICK + POV circle instead of the dual L STICK + R STICK + trigger layout on the XInput panel. Added a `XInputMode` property; `visualXInput` is now initialized with `XInputMode = true` so the correct layout is always visible, even before hitting ▶ Iniciar.
+- **XInput Controles tab layout broken** — The `grpXI.Layout` handler only updated `visualXInput.Width`, leaving conflicting `Anchor` flags fighting the manual sizing. Removed `Anchor` from `visualXInput`, `lblXInputButtons`, and `lblXInputAxes`; the Layout handler now bottom-pins both text labels and stretches the test panel to fill the full available height of the GroupBox.
+- **Main launcher crash on startup (SharpDX.XInput not found)** — `Program.cs` used `AppDomain.CurrentDomain.AssemblyResolve` which fires after JIT compilation in .NET 10, too late to resolve `SharpDX.XInput.dll` from the `lib\` subfolder. Replaced with a `LibProber` static class using `[ModuleInitializer]` + `AssemblyLoadContext.Default.Resolving`, the same approach already proven in the configurator.
+
 ## [1.0.2] - 2026-03-10
 
 ### Added

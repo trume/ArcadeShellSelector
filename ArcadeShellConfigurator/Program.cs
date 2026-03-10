@@ -1,10 +1,31 @@
 using System;
 using System.Reflection;
 using System.IO;
+using System.Runtime.CompilerServices;
+using System.Runtime.Loader;
 using System.Windows.Forms;
 
 namespace ArcadeShellConfigurator
 {
+    /// <summary>
+    /// Module initializer — guaranteed to run before any type initializer or Main().
+    /// Registers the lib\ probing hook so SharpDX / NAudio / LibVLCSharp are found
+    /// even before the Program static constructor fires.
+    /// </summary>
+    internal static class LibProber
+    {
+        [ModuleInitializer]
+        internal static void Init()
+        {
+            var libDir = Path.Combine(AppContext.BaseDirectory, "lib");
+            AssemblyLoadContext.Default.Resolving += (ctx, name) =>
+            {
+                var path = Path.Combine(libDir, (name.Name ?? "") + ".dll");
+                return File.Exists(path) ? ctx.LoadFromAssemblyPath(path) : null;
+            };
+        }
+    }
+
     internal static class Program
     {
         [STAThread]
@@ -16,15 +37,6 @@ namespace ArcadeShellConfigurator
 
         static Program()
         {
-            // Managed dependencies (e.g. LibVLCSharp.dll) are stored in lib\ by the main app's
-            // MoveDllsToLib build target. Teach the runtime to probe that subfolder.
-            AppDomain.CurrentDomain.AssemblyResolve += (_, args) =>
-            {
-                var name = new AssemblyName(args.Name!).Name + ".dll";
-                var path = Path.Combine(AppContext.BaseDirectory, "lib", name);
-                return File.Exists(path) ? Assembly.LoadFrom(path) : null;
-            };
-
             Application.ThreadException += (s, e) =>
                 MessageBox.Show($"Unhandled thread exception:\n{e.Exception}", "Fatal Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             AppDomain.CurrentDomain.UnhandledException += (s, e) =>

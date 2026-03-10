@@ -10,6 +10,8 @@
     <!-- Output into the main app's bin folder so we share libvlc, lib, Media, config.json -->
     <OutputPath>..\bin\$(Configuration)\$(TargetFramework)</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <!-- Always rebuild — don't skip when solution is built -->
+    <DisableFastUpToDateCheck>true</DisableFastUpToDateCheck>
   </PropertyGroup>
 
   <!-- Share AppConfig.cs from the main project -->

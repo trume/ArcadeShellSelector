@@ -1009,7 +1009,8 @@ namespace ArcadeShellConfigurator
             {
                 Location = new Point(10, 370),
                 Size = new Size(300, 180),
-                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom
+                Anchor = AnchorStyles.None,  // height managed manually in Layout handler
+                XInputMode = true            // always show L+R stick layout, even when idle
             };
             lblXInputButtons = new Label
             {
@@ -1017,7 +1018,6 @@ namespace ArcadeShellConfigurator
                 Location = new Point(10, 558),
                 AutoSize = true,
                 Font = new Font("Courier New", 8.5f),
-                Anchor = AnchorStyles.Bottom | AnchorStyles.Left
             };
             lblXInputAxes = new Label
             {
@@ -1025,7 +1025,6 @@ namespace ArcadeShellConfigurator
                 Location = new Point(10, 576),
                 AutoSize = true,
                 ForeColor = SystemColors.GrayText,
-                Anchor = AnchorStyles.Bottom | AnchorStyles.Left
             };
 
             grpXI.Controls.AddRange(new Control[]
@@ -1043,7 +1042,8 @@ namespace ArcadeShellConfigurator
             });
             grpXI.Layout += (_, _) =>
             {
-                int right = grpXI.ClientSize.Width - 10;
+                int right   = grpXI.ClientSize.Width - 10;
+                int clientH = grpXI.ClientSize.Height;
                 lblXiAutoUpdate.Location = new Point(right - lblXiAutoUpdate.PreferredWidth, 50);
                 lstXInputSlots.Width = right - lstXInputSlots.Left;
                 foreach (var (lbl, btn) in new[]
@@ -1055,8 +1055,19 @@ namespace ArcadeShellConfigurator
                     btn.Location = new Point(right - btn.Width, btn.Top);
                     lbl.Width = btn.Left - lbl.Left - 6;
                 }
-                lblXiHint.Width    = right - 10;
-                visualXInput.Width = right - visualXInput.Left;
+                lblXiHint.Width = right - 10;
+
+                // Bottom-pin axis and button text labels
+                int axesBottom = clientH - 8;
+                lblXInputAxes.Location    = new Point(10, axesBottom - lblXInputAxes.PreferredHeight);
+                lblXInputButtons.Location = new Point(10, lblXInputAxes.Top - lblXInputButtons.PreferredHeight - 2);
+
+                // Stretch the test visual panel (L stick + R stick + triggers + buttons)
+                // from its fixed top edge down to just above the text labels
+                int panelBottom = lblXInputButtons.Top - 4;
+                visualXInput.Bounds = new Rectangle(
+                    10, visualXInput.Top,
+                    right - 10, Math.Max(120, panelBottom - visualXInput.Top));
             };
 
             tblInput.Controls.Add(grpDI, 0, 0);
