@@ -196,7 +196,68 @@ if ($StripPdb) {
     Write-Host "  Removed $($pdbs.Count) PDB file(s)."
 }
 
-# --- 6. Verify required files ---
+# --- 6. Replace config.json with clean first-run defaults ---
+Write-Step "Writing clean first-run config.json"
+$cleanConfig = @'
+{
+  "ui": {
+    "Title": "\u00BFA qu\u00E9 jugamos hoy?",
+    "TopMost": true,
+    "MinImageSizePx": 180,
+    "ImageHeightRatio": 0.32,
+    "ImageWidthRatioPerOption": 0.4
+  },
+  "paths": {
+    "toolsRoot": "",
+    "imagesRoot": "",
+    "networkWaitSeconds": 15,
+    "videoBackground": ""
+  },
+  "options": [],
+  "music": {
+    "enabled": false,
+    "musicRoot": "",
+    "playRandom": false,
+    "selectedFile": "",
+    "volume": 100,
+    "audioDevice": "",
+    "thumbVideoVolume": 0
+  },
+  "Autor": {
+    "Quien": "2026.Trume76"
+  },
+  "Depuracion": {
+    "Activa": false
+  },
+  "input": {
+    "xinputEnabled": false,
+    "dinputEnabled": true,
+    "dinputButtonSelect": 1,
+    "dinputButtonBack": 2,
+    "dinputButtonLeft": 0,
+    "dinputButtonRight": 0,
+    "dinputDeviceName": "",
+    "navCooldownMs": 300,
+    "xinputSlot": 0,
+    "xinputButtonSelect": 4096,
+    "xinputButtonBack": 8192,
+    "xinputButtonLeft": 0,
+    "xinputButtonRight": 0
+  },
+  "ledblinky": {
+    "enabled": false,
+    "exePath": ""
+  },
+  "arranque": {
+    "bootSplashEnabled": true
+  }
+}
+'@
+$deployConfig = Join-Path $deployDir "config.json"
+Set-Content -Path $deployConfig -Value $cleanConfig -Encoding UTF8
+Write-Host "  Deployed config.json reset to first-run defaults (empty options)."
+
+# --- 7. Verify required files ---
 Write-Step "Verifying required files"
 $requiredFiles = @("ArcadeShellSelector.exe", "ArcadeShellConfigurator.exe", "config.json", "app.ico",
                    "Media\Bkg", "Media\Img", "Media\Music")
@@ -214,7 +275,7 @@ if (-not $allOk) {
     Write-Warning "Some required files are missing. The package may be incomplete."
 }
 
-# --- 7. Create ZIP ---
+# --- 8. Create ZIP ---
 Write-Step "Creating ZIP archive"
 if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
 

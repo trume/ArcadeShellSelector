@@ -24,6 +24,7 @@ namespace ArcadeShellConfigurator
         private TextBox txtTitle = null!;
         private CheckBox chkTopMost = null!;
         private CheckBox chkLogging = null!;
+        private CheckBox chkBootSplashEnabled = null!;
 
         // Paths tab
         private TextBox txtToolsRoot = null!;
@@ -132,6 +133,8 @@ namespace ArcadeShellConfigurator
         private long _logLastLength;
         private string _logFilePath = "";
         private string _logRawContent = "";
+        private Panel _logStatusPanel = null!;
+        private Label _logStatusLabel = null!;
 
         // Music preview — uses LibVLCManager.Instance (same as the main app's MusicPlayer)
         private LibVLCSharp.Shared.MediaPlayer? _previewPlayer;
@@ -236,7 +239,7 @@ namespace ArcadeShellConfigurator
 
             var grpBehavior = new GroupBox
             {
-                Text = "Behavior",
+                Text = "Arranque",
                 Dock = DockStyle.Top,
                 Height = 48,
                 Margin = new Padding(0, 0, 0, 4),
@@ -245,7 +248,15 @@ namespace ArcadeShellConfigurator
             chkTopMost = new CheckBox { Text = "Always on top (TopMost)", Location = new Point(16, 22), AutoSize = true };
             var lblSep = new Label { Text = "|", Location = new Point(210, 23), AutoSize = true, ForeColor = SystemColors.GrayText };
             chkLogging = new CheckBox { Text = "Enable logging (Depuracion)", Location = new Point(228, 22), AutoSize = true };
-            grpBehavior.Controls.AddRange(new Control[] { chkTopMost, lblSep, chkLogging });
+            var lblSep2 = new Label { Text = "|", Location = new Point(430, 23), AutoSize = true, ForeColor = SystemColors.GrayText };
+            chkBootSplashEnabled = new CheckBox
+            {
+                Text = "Mostrar animaci\u00f3n de arranque (BootSplash)",
+                Location = new Point(448, 22),
+                AutoSize = true,
+                Checked = true
+            };
+            grpBehavior.Controls.AddRange(new Control[] { chkTopMost, lblSep, chkLogging, lblSep2, chkBootSplashEnabled });
 
             // === Paths tab ===
             var tabPaths = new TabPage("Directorios") { Padding = new Padding(8) };
@@ -1090,9 +1101,34 @@ namespace ArcadeShellConfigurator
                 ScrollBars = RichTextBoxScrollBars.Both,
             };
 
-            txtLog.Resize += (_, _) => RefreshLogDisplay();
+            txtLog.Resize += (_, _) => _ = RefreshLogDisplayAsync();
 
-            tabLog.Controls.Add(txtLog);
+            _logStatusLabel = new Label
+            {
+                Dock = DockStyle.Left,
+                Width = 160,
+                TextAlign = ContentAlignment.MiddleLeft,
+                ForeColor = Color.Gray,
+                Font = new Font("Segoe UI", 8.5f),
+                Padding = new Padding(6, 0, 0, 0),
+                Text = "Loading…"
+            };
+            var logProgressBar = new ProgressBar
+            {
+                Dock = DockStyle.Fill,
+                Style = ProgressBarStyle.Marquee,
+                MarqueeAnimationSpeed = 30,
+            };
+            _logStatusPanel = new Panel { Dock = DockStyle.Bottom, Height = 26, Visible = false };
+            _logStatusPanel.Controls.Add(logProgressBar);
+            _logStatusPanel.Controls.Add(_logStatusLabel);
+
+            var logWrapper = new Panel { Dock = DockStyle.Fill };
+            // Bottom must be added BEFORE Fill so the docking engine reserves space for it first
+            logWrapper.Controls.Add(_logStatusPanel);
+            logWrapper.Controls.Add(txtLog);
+
+            tabLog.Controls.Add(logWrapper);
 
             tabs.TabPages.Add(tabLog);
 
@@ -1113,7 +1149,7 @@ namespace ArcadeShellConfigurator
             tabs.SelectedIndexChanged += (_, _) =>
             {
                 if (tabs.SelectedTab == tabLog)
-                    BeginInvoke(RefreshLogDisplay);
+                    BeginInvoke(async () => await RefreshLogDisplayAsync());
                 if (tabs.SelectedTab == tabPaths && !_isVideoPlaying)
                     AutoPreviewVideo();
                 btnClearLog.Enabled = tabs.SelectedTab == tabLog;
@@ -1235,6 +1271,7 @@ namespace ArcadeShellConfigurator
             WireField("AppTitle", txtTitle);
             WireField("TopMost", chkTopMost);
             WireField("Logging", chkLogging);
+            WireField("BootSplashEnabled", chkBootSplashEnabled);
             WireField("ToolsRoot", txtToolsRoot);
             WireField("ImagesRoot", txtImagesRoot);
             WireField("VideoBackground", txtVideoBackground);
@@ -1621,6 +1658,7 @@ namespace ArcadeShellConfigurator
             txtTitle.Text = _config.Ui.Title;
             chkTopMost.Checked = _config.Ui.TopMost;
             chkLogging.Checked = _config.Activa.Activa;
+            chkBootSplashEnabled.Checked = _config.Arranque.BootSplashEnabled;
 
             // Paths
             txtToolsRoot.Text = _config.Paths.ToolsRoot;
@@ -1733,6 +1771,7 @@ namespace ArcadeShellConfigurator
             _config.Ui.Title = txtTitle.Text;
             _config.Ui.TopMost = chkTopMost.Checked;
             _config.Activa.Activa = chkLogging.Checked;
+            _config.Arranque.BootSplashEnabled = chkBootSplashEnabled.Checked;
 
             _config.Paths.ToolsRoot = txtToolsRoot.Text;
             _config.Paths.ImagesRoot = txtImagesRoot.Text;
@@ -1858,15 +1897,22 @@ namespace ArcadeShellConfigurator
                 return;
             }
 
-            // Look for the exe next to the config file (solution root)
-            var dir = Path.GetDirectoryName(_configPath) ?? ".";
-            var exe = Path.Combine(dir, "bin", "Release", "net10.0-windows", $"{processName}.exe");
+            // 1. Deployed layout: both exes sit in the same folder as the configurator.
+            var exeDir = Path.GetDirectoryName(Application.ExecutablePath) ?? ".";
+            var exe = Path.Combine(exeDir, $"{processName}.exe");
+
+            // 2. Dev layout: exe is under bin\Release or bin\Debug relative to the config file.
             if (!File.Exists(exe))
-                exe = Path.Combine(dir, "bin", "Debug", "net10.0-windows", $"{processName}.exe");
+            {
+                var dir = Path.GetDirectoryName(_configPath) ?? ".";
+                exe = Path.Combine(dir, "bin", "Release", "net10.0-windows", $"{processName}.exe");
+                if (!File.Exists(exe))
+                    exe = Path.Combine(dir, "bin", "Debug", "net10.0-windows", $"{processName}.exe");
+            }
 
             if (!File.Exists(exe))
             {
-                MessageBox.Show($"Cannot find {processName}.exe.\nLooked in:\n{dir}",
+                MessageBox.Show($"Cannot find {processName}.exe.\nLooked in:\n{exe}",
                     "Not Found", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
@@ -1884,8 +1930,12 @@ namespace ArcadeShellConfigurator
                 if (!Path.IsPathRooted(path))
                     path = Path.GetFullPath(Path.Combine(
                         Path.GetDirectoryName(configPath) ?? ".", path));
-                if (Directory.Exists(path))
-                    dlg.SelectedPath = path;
+                // Walk up to the nearest existing ancestor
+                var walk = path;
+                while (!string.IsNullOrEmpty(walk) && !Directory.Exists(walk))
+                    walk = Path.GetDirectoryName(walk) ?? string.Empty;
+                if (!string.IsNullOrEmpty(walk))
+                    dlg.SelectedPath = walk;
             }
             if (dlg.ShowDialog() == DialogResult.OK)
                 target.Text = dlg.SelectedPath;
@@ -1930,8 +1980,14 @@ namespace ArcadeShellConfigurator
                 if (!Path.IsPathRooted(targetPath))
                     targetPath = Path.GetFullPath(Path.Combine(
                         Path.GetDirectoryName(configPath) ?? ".", targetPath));
-                if (Directory.Exists(targetPath))
-                    dlg.SelectedPath = targetPath;
+
+                // Walk up to the nearest existing ancestor so the dialog opens as
+                // close as possible to the configured path (even if it doesn't exist yet)
+                var walk = targetPath;
+                while (!string.IsNullOrEmpty(walk) && !Directory.Exists(walk))
+                    walk = Path.GetDirectoryName(walk) ?? string.Empty;
+                if (!string.IsNullOrEmpty(walk))
+                    dlg.SelectedPath = walk;
             }
             if (string.IsNullOrEmpty(dlg.SelectedPath) && Directory.Exists(baseDir))
                 dlg.SelectedPath = baseDir;
@@ -1962,14 +2018,16 @@ namespace ArcadeShellConfigurator
             var binBkgDir = Path.Combine(solutionDir, "bin", "Release", "net10.0-windows", "Media", "Bkg");
             try { Directory.CreateDirectory(binBkgDir); } catch { }
 
-            // Remove existing video files from both Bkg folders
+            // Remove existing video files from both Bkg folders, but never delete
+            // the file that was just selected (it may already live in one of these folders).
             var videoExts = new[] { ".mp4", ".avi", ".mkv", ".wmv", ".mov", ".ogg" };
             foreach (var dir in new[] { bkgDir, binBkgDir })
             {
                 try
                 {
                     foreach (var old in Directory.GetFiles(dir)
-                        .Where(f => videoExts.Contains(Path.GetExtension(f), StringComparer.OrdinalIgnoreCase)))
+                        .Where(f => videoExts.Contains(Path.GetExtension(f), StringComparer.OrdinalIgnoreCase)
+                                    && !string.Equals(f, srcFile, StringComparison.OrdinalIgnoreCase)))
                     {
                         try { File.Delete(old); } catch { }
                     }
@@ -1977,12 +2035,14 @@ namespace ArcadeShellConfigurator
                 catch { }
             }
 
-            // Copy the new video into both Bkg folders
+            // Copy the new video into both Bkg folders (skip if already there)
             var destName = Path.GetFileName(srcFile);
             var destSource = Path.Combine(bkgDir, destName);
             var destBin = Path.Combine(binBkgDir, destName);
-            try { File.Copy(srcFile, destSource, true); } catch { }
-            try { File.Copy(srcFile, destBin, true); } catch { }
+            if (!string.Equals(srcFile, destSource, StringComparison.OrdinalIgnoreCase))
+                try { File.Copy(srcFile, destSource, true); } catch { }
+            if (!string.Equals(srcFile, destBin, StringComparison.OrdinalIgnoreCase))
+                try { File.Copy(srcFile, destBin, true); } catch { }
 
             txtVideoBackground.Text = destSource;
         }
@@ -2909,31 +2969,46 @@ namespace ArcadeShellConfigurator
             }
         }
 
-        private void LoadLogFull()
+        private async void LoadLogFull()
         {
             _logLastLength = 0;
             if (!File.Exists(_logFilePath))
             {
                 _logRawContent = "";
-                RefreshLogDisplay();
+                await RefreshLogDisplayAsync();
                 return;
             }
+
+            _logStatusLabel.Text = "Reading log file…";
+            _logStatusPanel.Visible = true;
+
+            string content;
+            long fileLength;
             try
             {
-                using var fs = new FileStream(_logFilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-                using var sr = new StreamReader(fs);
-                _logRawContent = sr.ReadToEnd();
-                _logLastLength = fs.Length;
-                RefreshLogDisplay();
+                (content, fileLength) = await Task.Run(() =>
+                {
+                    using var fs = new FileStream(_logFilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                    using var sr = new StreamReader(fs);
+                    return (sr.ReadToEnd(), fs.Length);
+                });
             }
             catch (Exception ex)
             {
+                _logStatusPanel.Visible = false;
                 _logRawContent = $"Error reading log: {ex.Message}";
-                RefreshLogDisplay();
+                await RefreshLogDisplayAsync();
+                return;
             }
+
+            _logRawContent = content;
+            _logLastLength = fileLength;
+            _logStatusLabel.Text = "Rendering…";
+            await RefreshLogDisplayAsync();
+            _logStatusPanel.Visible = false;
         }
 
-        private void AppendNewLogLines()
+        private async void AppendNewLogLines()
         {
             if (!File.Exists(_logFilePath)) return;
             try
@@ -2951,38 +3026,68 @@ namespace ArcadeShellConfigurator
                 if (!string.IsNullOrEmpty(newText))
                 {
                     _logRawContent += newText;
-                    RefreshLogDisplay();
+                    await RefreshLogDisplayAsync();
                 }
             }
             catch { }
         }
 
-        private int MeasureLogLineHeight()
-        {
-            // Put two lines in, measure the Y difference to get the real rendered line height
-            var oldText = txtLog.Text;
-            txtLog.Text = "A\nB";
-            int y0 = txtLog.GetPositionFromCharIndex(0).Y;
-            int y1 = txtLog.GetPositionFromCharIndex(2).Y; // char index of 'B'
-            txtLog.Text = oldText;
-            int h = y1 - y0;
-            return h > 0 ? h : 14;
-        }
+        // Sync wrapper kept so callers that can't be async (BtnLogClear etc.) still work.
+        private void RefreshLogDisplay() => _ = RefreshLogDisplayAsync();
 
-        private void RefreshLogDisplay()
+        private async Task RefreshLogDisplayAsync()
         {
             if (txtLog == null || !txtLog.IsHandleCreated) return;
             int clientH = txtLog.ClientSize.Height;
             if (clientH <= 0) return; // tab not visible yet
 
-            int lineHeight = MeasureLogLineHeight();
-            int visibleLines = clientH / lineHeight;
-            int contentLines = string.IsNullOrEmpty(_logRawContent) ? 0 : _logRawContent.Split('\n').Length;
-            int padLines = Math.Max(0, visibleLines - contentLines + 1);
-            var fullText = (padLines > 0 ? new string('\n', padLines) : "") + _logRawContent;
+            // Cap to the last 2000 lines — keeps RTB fast even for huge log files
+            const int maxLines = 2000;
+            var allLines = _logRawContent.Split('\n');
+            var displayLines = allLines.Length > maxLines ? allLines[^maxLines..] : allLines;
 
-            txtLog.Text = fullText;
-            HighlightCategories(fullText);
+            const int lineHeightPx = 14;
+            int visibleLines = clientH / lineHeightPx;
+            int padLines = Math.Max(0, visibleLines - displayLines.Length + 1);
+
+            // Build the display string on a background thread (pure string work — no UI)
+            var displayText = await Task.Run(() =>
+            {
+                var raw = (padLines > 0 ? new string('\n', padLines) : "") + string.Join('\n', displayLines);
+                // Normalise to \r\n — RTB always stores/returns \r\n, so indices must match
+                return raw.Replace("\r\n", "\n").Replace("\n", "\r\n");
+            });
+
+            if (!txtLog.IsHandleCreated) return;
+
+            // Set text and colour all tags in one WM_SETREDRAW-suppressed block.
+            // Tag scanning reads txtLog.Text AFTER the assignment so the indices are
+            // guaranteed to match what the RichTextBox stored internally (RTB may
+            // normalise the string differently than our local copy).
+            SendMessage(txtLog.Handle, WM_SETREDRAW, IntPtr.Zero, IntPtr.Zero);
+            try
+            {
+                txtLog.Text = displayText;
+                var rtbText = txtLog.Text; // read back — always \r\n, exact internal indices
+                foreach (var (tag, bg) in _logCategories)
+                {
+                    int i = 0;
+                    while ((i = rtbText.IndexOf(tag, i, StringComparison.OrdinalIgnoreCase)) >= 0)
+                    {
+                        txtLog.Select(i, tag.Length);
+                        txtLog.SelectionBackColor = bg;
+                        txtLog.SelectionColor = Color.White;
+                        i += tag.Length;
+                    }
+                }
+                txtLog.SelectionStart = txtLog.TextLength;
+                txtLog.SelectionLength = 0;
+            }
+            finally
+            {
+                SendMessage(txtLog.Handle, WM_SETREDRAW, (IntPtr)1, IntPtr.Zero);
+                txtLog.Invalidate();
+            }
             ScrollLogToEnd();
         }
 
@@ -2997,26 +3102,9 @@ namespace ArcadeShellConfigurator
             ("[CONFIG]",   Color.FromArgb(180, 120, 0)),
         };
 
-        private void HighlightCategories(string _)
-        {
-            txtLog.SuspendLayout();
-            var rtbText = txtLog.Text; // uses \r\n — matches RichTextBox indices
-            foreach (var (tag, bg) in _logCategories)
-            {
-                int idx = 0;
-                while ((idx = rtbText.IndexOf(tag, idx, StringComparison.OrdinalIgnoreCase)) >= 0)
-                {
-                    txtLog.Select(idx, tag.Length);
-                    txtLog.SelectionBackColor = bg;
-                    txtLog.SelectionColor = Color.White;
-                    idx += tag.Length;
-                }
-            }
-            txtLog.SelectionStart = txtLog.TextLength;
-            txtLog.SelectionLength = 0;
-            txtLog.ResumeLayout();
-        }
 
+
+        private const int WM_SETREDRAW = 0x000B;
         private const int WM_VSCROLL = 0x0115;
         private const int SB_BOTTOM = 7;
 
@@ -3039,7 +3127,7 @@ namespace ArcadeShellConfigurator
                     File.WriteAllText(_logFilePath, "");
                 _logRawContent = "";
                 _logLastLength = 0;
-                RefreshLogDisplay();
+                _ = RefreshLogDisplayAsync();
             }
             catch (Exception ex)
             {

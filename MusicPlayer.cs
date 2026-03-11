@@ -190,6 +190,8 @@ namespace ArcadeShellSelector
                     _stopped = false;
                     if (_mediaPlayer != null)
                     {
+                        // Re-apply configured volume — LibVLC may have lost it across Stop/Play
+                        _mediaPlayer.Volume = _configuredVolume;
                         if (!_mediaPlayer.IsPlaying)
                             _mediaPlayer.Play();
                         return;
