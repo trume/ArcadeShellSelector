@@ -157,20 +157,20 @@ jobs:
 
         $commitText = $commits -join "`n"
 
-        $body = @"
-## Highlights
-
-This release includes reliability, packaging, and maintenance improvements for ArcadeShellSelector.
-
-## Human-Readable Changelog
-
-$commitText
-
-## Full Changelog
-
-- Full project changelog: [$changelogUrl]($changelogUrl)
-- Diff since last tag: [$compareUrl]($compareUrl)
-"@
+        $body = @(
+          "## Highlights",
+          "",
+          "This release includes reliability, packaging, and maintenance improvements for ArcadeShellSelector.",
+          "",
+          "## Human-Readable Changelog",
+          "",
+          $commitText,
+          "",
+          "## Full Changelog",
+          "",
+          "- Full project changelog: [$changelogUrl]($changelogUrl)",
+          "- Diff since last tag: [$compareUrl]($compareUrl)"
+        ) -join "`n"
 
         $body | Out-File -FilePath "release-notes.md" -Encoding utf8
 
