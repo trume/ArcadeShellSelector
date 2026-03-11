@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   release:
-    if: ${{ github.event_name != 'push' || (github.actor != 'github-actions[bot]' && !startsWith(github.event.head_commit.message, 'chore(release): bump version to ')) }}
+    if: "${{ github.event_name != 'push' || (github.actor != 'github-actions[bot]' && !startsWith(github.event.head_commit.message, 'chore(release): bump version to ')) }}"
     runs-on: windows-latest
     env:
       BUMP_TYPE: "${{ github.event_name == 'workflow_dispatch' && github.event.inputs.bump || 'patch' }}"
