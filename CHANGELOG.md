@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-03-11
+
+### Added
+- **First-run guard** — New `FirstRunGuard.cs` detects unconfigured state (missing `config.json` or empty `options`) before anything is shown on screen. Presents a standard Windows dialog offering to open the Configurator or exit; the app cannot launch unconfigured.
+- **BootSplash bypass setting** — New `arranque.bootSplashEnabled` boolean in `config.json` and `StartupConfig` class. When `false`, the boot animation is skipped entirely and the launcher appears immediately. Exposed in the Configurator under the renamed **"Arranque"** group on the General tab.
+- **Clean first-run config in publish** — `publish.ps1` now replaces the deployed `config.json` with a pristine first-run version (empty `options`, blank paths, features disabled) so new installations always trigger the first-run guard.
+
+### Fixed
+- **Configurator Launch button fails on target machines** — `BtnLaunch_Click` only searched `bin\Release` and `bin\Debug` dev paths. Now checks alongside the configurator's own executable first (deployed flat layout), then falls back to dev paths.
+- **Video background disappears after selecting it** — `BrowseAndDeployVideo` deleted all videos in `Media\Bkg` before copying, destroying the source file when it already lived there. Cleanup now skips the selected file, and self-copies are avoided.
+
+### Changed
+- **Behavior group renamed to Arranque** — The General tab's "Behavior" GroupBox is now labelled "Arranque" and includes the BootSplash toggle alongside TopMost and logging checkboxes.
+
 ## [1.0.3] - 2026-03-10
 
 ### Fixed

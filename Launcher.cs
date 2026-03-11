@@ -1134,7 +1134,10 @@ namespace ArcadeShellSelector
 
             try
             {
-                var thumbVol = config.Music?.ThumbVideoVolume ?? 0;
+                // Clamp thumb volume to never exceed main music volume so main is always louder
+                var mainVol  = config.Music?.Volume ?? 100;
+                var thumbVol = Math.Min(config.Music?.ThumbVideoVolume ?? 0, mainVol);
+
                 if (_thumbPlayer == null)
                 {
                     _thumbLibVlc = thumbVol > 0 ? new LibVLC() : new LibVLC("--no-audio");
@@ -1151,7 +1154,11 @@ namespace ArcadeShellSelector
                     {
                         _thumbPlayer.Playing += (_, __) =>
                         {
-                            try { _thumbPlayer.Volume = config.Music?.ThumbVideoVolume ?? 0; } catch { }
+                            // Re-evaluate at play time so config changes take effect;
+                            // always cap below main music volume
+                            var mv = config.Music?.Volume ?? 100;
+                            var tv = Math.Min(config.Music?.ThumbVideoVolume ?? 0, mv);
+                            try { _thumbPlayer.Volume = tv; } catch { }
                         };
                     }
                 }
@@ -1171,10 +1178,7 @@ namespace ArcadeShellSelector
                 _thumbMedia.AddOption(":input-repeat=65535"); // loop virtually forever
                 _thumbPlayer.Media = _thumbMedia;
                 _thumbPlayer.Play();
-
-                // Duck music volume while thumb video is playing
-                if (thumbVol > 0 && musicPlayer != null)
-                    musicPlayer.SetVolume(Math.Max(musicPlayer.ConfiguredVolume / 4, 10));
+                // Main music volume is NOT touched — it stays at its configured level
             }
             catch { }
         }
@@ -1226,10 +1230,6 @@ namespace ArcadeShellSelector
             {
                 try { Task.Run(() => { try { _thumbPlayer.Stop(); } catch { } }).Wait(500); } catch { }
             }
-
-            // Restore music volume after thumb video stops
-            if (musicPlayer != null)
-                musicPlayer.SetVolume(musicPlayer.ConfiguredVolume);
 
             // Restore original image
             if (pic != null && _thumbOriginalImages.TryGetValue(pic, out var orig))

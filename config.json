@@ -7,54 +7,28 @@
     "ImageWidthRatioPerOption": 0.4
   },
   "paths": {
-    "toolsRoot": "F:\\",
-    "imagesRoot": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Img",
+    "toolsRoot": "",
+    "imagesRoot": "",
     "networkWaitSeconds": 15,
-    "videoBackground": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Bkg\\Background.mp4"
+    "videoBackground": ""
   },
-  "options": [
-    {
-      "label": "HyperSpin 12tb",
-      "exe": "Player 3 MAX\\Player 3 MAX\\Player 3 MAX.exe",
-      "image": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Img\\shell1.png",
-      "thumbVideo": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Video\\bloodwar.avi"
-    },
-    {
-      "label": "CoinOps Arcade Next",
-      "exe": "I:\\Emu\\Emulators\\Demul\\demul.exe",
-      "image": "G:\\CoinOPS Collections\\CoinOPS Collections\\CoinOPS Collections.jpg",
-      "thumbVideo": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Video\\Wave Race 64.avi"
-    },
-    {
-      "label": "CoinOps Legens",
-      "exe": "I:\\Emu\\Emulators\\Arnold\\arnold.exe",
-      "image": "G:\\CoinOPS Collections\\CoinOPS Collections\\Helper.jpg",
-      "thumbVideo": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Video\\3countb.avi"
-    },
-    {
-      "label": "CoinOps Arcades",
-      "exe": "I:\\Emu\\Emulators\\Arnold\\arnold.exe",
-      "image": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Img\\gnw_mario.png",
-      "thumbVideo": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Video\\bloodwar.avi"
-    }
-  ],
+  "options": [],
   "music": {
-    "enabled": true,
-    "musicRoot": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Music",
+    "enabled": false,
+    "musicRoot": "",
     "playRandom": false,
-    "selectedFile": "ELYSIUM.MOD",
+    "selectedFile": "",
     "volume": 100,
-    "audioDevice": "Altavoces (Realtek(R) Audio)",
-    "thumbVideoVolume": 51
+    "thumbVideoVolume": 0
   },
   "Autor": {
     "Quien": "2026.Trume76"
   },
   "Depuracion": {
-    "Activa": true
+    "Activa": false
   },
   "input": {
-    "xinputEnabled": true,
+    "xinputEnabled": false,
     "dinputEnabled": true,
     "dinputButtonSelect": 1,
     "dinputButtonBack": 2,
@@ -69,7 +43,10 @@
     "xinputButtonRight": 0
   },
   "ledblinky": {
-    "enabled": true,
+    "enabled": false,
     "exePath": ""
+  },
+  "arranque": {
+    "bootSplashEnabled": true
   }
 }

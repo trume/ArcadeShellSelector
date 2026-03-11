@@ -198,7 +198,7 @@ namespace ArcadeShellSelector
             }
 
             // ── INPUT ───────────────────────────────────────────────────────
-            Pause(300, 800);
+            Pause(800, 1200);
             Boot("[BOOT] Scanning input devices...", 60);
             Pause(150, 500);
             if (cfg != null)
@@ -525,7 +525,7 @@ namespace ArcadeShellSelector
             {
                 settle.Stop(); settle.Dispose();
                 _cursorTimer.Start(); // blink on for pre-anim
-                _preAnimTimer = new System.Windows.Forms.Timer { Interval = 11000 };
+                _preAnimTimer = new System.Windows.Forms.Timer { Interval = 12000 };
                 _preAnimTimer.Tick += (_, _) =>
                 {
                     _preAnimTimer!.Stop(); _preAnimTimer.Dispose(); _preAnimTimer = null;

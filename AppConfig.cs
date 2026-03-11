@@ -33,6 +33,9 @@ namespace ArcadeShellSelector
         [JsonPropertyName("ledblinky")]
         public LedBlinkyConfig LedBlinky { get; set; } = new();
 
+        [JsonPropertyName("arranque")]
+        public StartupConfig Arranque { get; set; } = new();
+
         public static (AppConfig? cfg, string? err) TryLoadFromFile(string path)
         {
             try
@@ -215,6 +218,16 @@ namespace ArcadeShellSelector
 
         [JsonPropertyName("exePath")]
         public string ExePath { get; set; } = string.Empty;
+    }
+
+    public sealed class StartupConfig
+    {
+        /// <summary>
+        /// When false the BootSplash animation is skipped entirely and the
+        /// launcher appears immediately on startup.
+        /// </summary>
+        [JsonPropertyName("bootSplashEnabled")]
+        public bool BootSplashEnabled { get; set; } = true;
     }
 }
 

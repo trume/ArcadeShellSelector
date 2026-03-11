@@ -38,32 +38,37 @@ namespace ArcadeShellSelector
         {
             ApplicationConfiguration.Initialize();
 
-            // Load config once here so BootSplash can display real data
-            // and Launcher can skip re-reading the file.
             var configPath = Path.Combine(AppContext.BaseDirectory, "config.json");
             var (cfg, _) = AppConfig.TryLoadFromFile(configPath);
 
-            // Pre-create the launcher (hidden) while the splash is running so there is
-            // no gap between the two windows — the launcher becomes visible the instant
-            // the splash closes, without the desktop ever appearing.
+            // ── First-run guard — must run before anything is shown on screen ────────
+            bool isFirstRun = FirstRunGuard.IsFirstRun(configPath, cfg);
+            if (FirstRunGuard.Evaluate(configPath, cfg))
+                return; // configurator launched or user closed — abort startup
+            // ────────────────────────────────────────────────────────────────────────
+
             var launcher = new Launcher(cfg);
 
-            using (var splash = new BootSplash())
+            // BootSplash is skipped on first-run (not yet configured) regardless of the setting.
+            if (!isFirstRun && (cfg?.Arranque.BootSplashEnabled ?? true))
             {
-                splash.BuildSequence(cfg);
-
-                // When the splash is about to close, show the launcher first so both
-                // windows exist simultaneously for one paint cycle.
-                splash.FormClosing += (_, _) =>
+                using (var splash = new BootSplash())
                 {
-                    launcher.Show();
-                    launcher.Activate();
-                };
-
-                splash.ShowDialog();
+                    splash.BuildSequence(cfg);
+                    splash.FormClosing += (_, _) =>
+                    {
+                        launcher.Show();
+                        launcher.Activate();
+                    };
+                    splash.ShowDialog();
+                }
+            }
+            else
+            {
+                launcher.Show();
+                launcher.Activate();
             }
 
-            // Launcher is already visible; hand control to its message loop.
             Application.Run(launcher);
         }
     }
