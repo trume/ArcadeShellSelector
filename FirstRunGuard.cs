@@ -59,7 +59,7 @@ namespace ArcadeShellSelector
                 MaximizeBox     = false,
                 MinimizeBox     = false,
                 TopMost         = true,
-                ClientSize      = new Size(480, 240),
+                ClientSize      = new Size(500, 210),
             };
 
             // App icon
@@ -67,11 +67,13 @@ namespace ArcadeShellSelector
             if (File.Exists(icoPath))
                 form.Icon = new Icon(icoPath);
 
+            var imgPath = Path.Combine(AppContext.BaseDirectory, "Media", "Img", "firstrun.png");
             var icon = new PictureBox
             {
-                Image    = SystemIcons.Information.ToBitmap(),
-                SizeMode = PictureBoxSizeMode.AutoSize,
+                Image    = File.Exists(imgPath) ? Image.FromFile(imgPath) : SystemIcons.Information.ToBitmap(),
+                SizeMode = PictureBoxSizeMode.Zoom,
                 Location = new Point(20, 20),
+                Size     = new Size(32, 32),
             };
 
             var lblMessage = new Label
@@ -89,21 +91,23 @@ namespace ArcadeShellSelector
             {
                 Text         = "Abrir Configuración",
                 Size         = new Size(180, 36),
-                Location     = new Point(100, 170),
+                Location     = new Point(80, 155),
                 DialogResult = DialogResult.Yes,
+                TabIndex     = 1,
             };
 
             var btnExit = new Button
             {
                 Text         = "Salir",
-                Size         = new Size(180, 36),
-                Location     = new Point(290, 170),
+                Size         = new Size(100, 36),
+                Location     = new Point(300, 155),
                 DialogResult = DialogResult.No,
+                TabIndex     = 0,
             };
 
-            form.AcceptButton = btnConfigure;
             form.CancelButton = btnExit;
             form.Controls.AddRange(new Control[] { icon, lblMessage, btnConfigure, btnExit });
+            form.Shown += (_, _) => btnConfigure.Focus();
 
             result = form.ShowDialog() == DialogResult.Yes;
             return result;

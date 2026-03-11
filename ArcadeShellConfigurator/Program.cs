@@ -3,6 +3,7 @@ using System.Reflection;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.Loader;
+using System.Threading;
 using System.Windows.Forms;
 
 namespace ArcadeShellConfigurator
@@ -31,6 +32,10 @@ namespace ArcadeShellConfigurator
         [STAThread]
         static void Main()
         {
+            using var mutex = new Mutex(true, "ArcadeShellConfigurator_SingleInstance", out bool isNew);
+            if (!isNew)
+                return; // another instance is already running
+
             ApplicationConfiguration.Initialize();
             Application.Run(new ConfigForm());
         }

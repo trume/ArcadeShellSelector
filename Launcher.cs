@@ -52,11 +52,14 @@ namespace ArcadeShellSelector
         private SpectrumPanel? spectrumPanel;
         private Form? _spectrumForm;
         private LedBlinky? _ledBlinky;
+        private Button configButton = null!;
         private Button closeButton = null!;
         private Label titleLabel = null!;
         private Label AutorApp = null!;
+        private Label _inputIndicator = null!;
         private PictureBox? autorIcon;
         private PictureBox? selectedPic;
+        private int _navIndex = -1; // -1 = no selection; 0..N-1 = options; N = configButton; N+1 = closeButton
         private bool _childRunning;
         private Task? _resumeTask;
         private CancellationTokenSource? _musicDiagCts;
@@ -323,27 +326,37 @@ namespace ArcadeShellSelector
 
         private void MoveSelection(int direction)
         {
-            if (optionUis.Count == 0) return;
+            int totalItems = optionUis.Count + 2; // options + configButton + closeButton
+            if (totalItems == 0) return;
 
-            // Global navigation cooldown: prevents noisy arcade encoder signals (bouncing
-            // axis / POV) from firing MoveSelection many times per physical joystick move.
             var now = DateTime.UtcNow;
             if ((now - _lastNavTime).TotalMilliseconds < config.Input.NavCooldownMs) return;
             _lastNavTime = now;
 
-            int idx = selectedPic == null ? 0 : optionUis.FindIndex(x => x.Pic == selectedPic);
-            idx = (idx + direction + optionUis.Count) % optionUis.Count;
-            selectedPic = optionUis[idx].Pic;
+            _navIndex = _navIndex < 0 ? 0 : (_navIndex + direction + totalItems) % totalItems;
+            selectedPic = _navIndex < optionUis.Count ? optionUis[_navIndex].Pic : null;
             RefreshSelectionVisuals();
         }
 
         private void SelectCurrentOption()
         {
             if (_childRunning) return;
-            if (selectedPic == null) return;
-            var opt = optionUis.FirstOrDefault(x => x.Pic == selectedPic);
-            if (opt.Pic != null)
-                _ = OnOptionClickedAsync(opt.Pic, opt.ExePath, opt.WaitForProcessName);
+            if (_navIndex < 0) return;
+
+            if (_navIndex < optionUis.Count)
+            {
+                var opt = optionUis[_navIndex];
+                if (opt.Pic != null)
+                    _ = OnOptionClickedAsync(opt.Pic, opt.ExePath, opt.WaitForProcessName);
+            }
+            else if (_navIndex == optionUis.Count)
+            {
+                ConfigButton_Click(configButton, EventArgs.Empty);
+            }
+            else if (_navIndex == optionUis.Count + 1)
+            {
+                CloseButton_Click(closeButton, EventArgs.Empty);
+            }
         }
 
         private void EnforceZOrder()
@@ -392,11 +405,12 @@ namespace ArcadeShellSelector
             // WinForms Color.Transparent only paints the parent's BackColor (dark gray),
             // so we use a separate form with TransparencyKey to achieve true transparency
             // over the LibVLC video surface.
+            var overlayTransKey = Color.FromArgb(1, 1, 1);
             _overlayForm = new Form
             {
                 FormBorderStyle = FormBorderStyle.None,
-                BackColor = Color.Magenta,
-                TransparencyKey = Color.Magenta,
+                BackColor = overlayTransKey,
+                TransparencyKey = overlayTransKey,
                 ShowInTaskbar = false,
                 StartPosition = FormStartPosition.Manual,
                 KeyPreview = true,
@@ -419,7 +433,7 @@ namespace ArcadeShellSelector
                 ForeColor = Color.White,
                 BackColor = Color.Transparent,
                 AutoSize = true,
-                Font = new Font("Segoe UI", 24, FontStyle.Bold)
+                Font = new Font("Segoe UI", 28, FontStyle.Bold)
             };
             AddOverlayControl(titleLabel);
 
@@ -482,6 +496,23 @@ namespace ArcadeShellSelector
                 AddOverlayControl(autorIcon);
             }
 
+            configButton = new Button
+            {
+                Text = "Configuración",
+                Width = 160,
+                Height = 44,
+                Font = new Font("Segoe UI", 12F, FontStyle.Regular),
+                BackColor = Color.Transparent,
+                ForeColor = Color.White,
+                UseVisualStyleBackColor = false,
+                FlatStyle = FlatStyle.Flat
+            };
+            configButton.FlatAppearance.BorderColor = Color.Gray;
+            configButton.FlatAppearance.BorderSize = 1;
+            configButton.Click += ConfigButton_Click;
+            WireButtonHover(configButton);
+            AddOverlayControl(configButton);
+
             closeButton = new Button
             {
                 Text = "Salir / Exit",
@@ -496,7 +527,23 @@ namespace ArcadeShellSelector
             closeButton.FlatAppearance.BorderColor = Color.Gray;
             closeButton.FlatAppearance.BorderSize = 1;
             closeButton.Click += CloseButton_Click;
+            WireButtonHover(closeButton);
             AddOverlayControl(closeButton);
+
+            // Input indicator — shows which input method is active
+            string inputText = (config.Input.XInputEnabled && config.Input.DInputEnabled) ? "🎮 XInput + DInput"
+                             : config.Input.XInputEnabled ? "🎮 XInput"
+                             : config.Input.DInputEnabled ? "🎮 DInput"
+                             : "⌨ Keyboard";
+            _inputIndicator = new Label
+            {
+                Text = inputText,
+                AutoSize = true,
+                Font = new Font("Segoe UI", 9F, FontStyle.Regular),
+                ForeColor = Color.FromArgb(140, 255, 255, 255),
+                BackColor = Color.Transparent,
+            };
+            AddOverlayControl(_inputIndicator);
 
             // Spectrum analyzer — WASAPI loopback, no LibVLC interference
             spectrumAnalyzer = new SpectrumAnalyzer();
@@ -510,8 +557,8 @@ namespace ArcadeShellSelector
             _spectrumForm = new ClickThroughForm
             {
                 FormBorderStyle = FormBorderStyle.None,
-                BackColor = Color.Magenta,
-                TransparencyKey = Color.Magenta,
+                BackColor = Color.FromArgb(1, 1, 1),
+                TransparencyKey = Color.FromArgb(1, 1, 1),
                 ShowInTaskbar = false,
                 StartPosition = FormStartPosition.Manual,
                 Opacity = 0.20,
@@ -610,7 +657,7 @@ namespace ArcadeShellSelector
                 ForeColor = Color.White,
                 BackColor = Color.Transparent,
                 AutoSize = true,
-                Font = new Font("Segoe UI", 14F, FontStyle.Regular),
+                Font = new Font("Segoe UI", 20F, FontStyle.Bold),
                 TextAlign = ContentAlignment.MiddleCenter
             };
         }
@@ -748,7 +795,7 @@ namespace ArcadeShellSelector
             using var gfx = CreateGraphics();
             int textW = (int)gfx.MeasureString(AutorApp.Text, AutorApp.Font).Width + 8;
             int autorBlockW = (autorIcon != null ? iconSize + iconGap : 0) + textW;
-            int totalLineW = autorBlockW + gap + closeButton.Width;
+            int totalLineW = autorBlockW + gap + configButton.Width + gap + closeButton.Width;
             int startX = (w - totalLineW) / 2;
 
             if (autorIcon != null)
@@ -766,9 +813,19 @@ namespace ArcadeShellSelector
                 AutorApp.Location = new Point(startX, bottomY + (Math.Max(closeButton.Height, autorHeight) - autorHeight) / 2);
             }
 
-            closeButton.Location = new Point(
+            configButton.Location = new Point(
                 startX + autorBlockW + gap,
+                bottomY + (Math.Max(closeButton.Height, autorHeight) - configButton.Height) / 2
+            );
+
+            closeButton.Location = new Point(
+                configButton.Right + gap,
                 bottomY + (Math.Max(closeButton.Height, autorHeight) - closeButton.Height) / 2
+            );
+
+            _inputIndicator.Location = new Point(
+                closeButton.Right + gap,
+                bottomY + (Math.Max(closeButton.Height, autorHeight) - _inputIndicator.Height) / 2
             );
 
             SyncOverlayBounds();
@@ -1109,6 +1166,15 @@ namespace ArcadeShellSelector
                 }
                 pic.Invalidate();
             }
+
+            // Highlight bottom buttons when navigated via controller
+            bool cfgSelected = _navIndex == optionUis.Count;
+            configButton.BackColor = cfgSelected ? Color.White : Color.Transparent;
+            configButton.ForeColor = cfgSelected ? Color.Black : Color.White;
+
+            bool exitSelected = _navIndex == optionUis.Count + 1;
+            closeButton.BackColor = exitSelected ? Color.White : Color.Transparent;
+            closeButton.ForeColor = exitSelected ? Color.Black : Color.White;
         }
 
         private void StartThumbVideo(PictureBox pb)
@@ -1147,7 +1213,15 @@ namespace ArcadeShellSelector
                         _ = Task.Run(() =>
                         {
                             try { _thumbPlayer?.Stop(); } catch { }
-                            try { _thumbPlayer?.Play(); } catch { }
+                            try
+                            {
+                                _thumbPlayer?.Play();
+                                // Re-apply volume immediately after restart
+                                var mv = config.Music?.Volume ?? 100;
+                                var tv = Math.Min(config.Music?.ThumbVideoVolume ?? 0, mv);
+                                if (tv > 0 && _thumbPlayer != null) _thumbPlayer.Volume = tv;
+                            }
+                            catch { }
                         });
                     };
                     if (thumbVol > 0)
@@ -1177,6 +1251,9 @@ namespace ArcadeShellSelector
                 _thumbMedia.AddOption(":run-time=6");       // play only 6 seconds per loop
                 _thumbMedia.AddOption(":input-repeat=65535"); // loop virtually forever
                 _thumbPlayer.Media = _thumbMedia;
+                // Set thumb volume before Play() so it doesn't briefly blast at 100
+                if (thumbVol > 0)
+                    _thumbPlayer.Volume = thumbVol;
                 _thumbPlayer.Play();
                 // Main music volume is NOT touched — it stays at its configured level
             }
@@ -1231,6 +1308,10 @@ namespace ArcadeShellSelector
                 try { Task.Run(() => { try { _thumbPlayer.Stop(); } catch { } }).Wait(500); } catch { }
             }
 
+            // Re-assert main music volume — the thumb player's audio session may have
+            // lowered the process-wide mixer level while it was active.
+            try { musicPlayer?.SetVolume(musicPlayer.ConfiguredVolume); } catch { }
+
             // Restore original image
             if (pic != null && _thumbOriginalImages.TryGetValue(pic, out var orig))
                 pic.Image = orig;
@@ -1259,6 +1340,41 @@ namespace ArcadeShellSelector
                     e.Graphics.DrawRectangle(pen, r);
                 }
             }
+        }
+
+        private static void WireButtonHover(Button btn)
+        {
+            btn.MouseEnter += (_, _) => { btn.BackColor = Color.White; btn.ForeColor = Color.Black; };
+            btn.MouseLeave += (_, _) => { btn.BackColor = Color.Transparent; btn.ForeColor = Color.White; };
+        }
+
+        private async void ConfigButton_Click(object? sender, EventArgs e)
+        {
+            var cfgExe = Path.Combine(AppContext.BaseDirectory, "ArcadeShellConfigurator.exe");
+            if (!File.Exists(cfgExe)) return;
+
+            configButton.Enabled = false;
+
+            var proc = Process.Start(new ProcessStartInfo(cfgExe) { UseShellExecute = false });
+            if (proc == null) { configButton.Enabled = true; return; }
+
+            // Poll until the configurator has a main window (rendered on screen)
+            bool windowReady = await Task.Run(() =>
+            {
+                for (int i = 0; i < 100; i++) // up to ~10 seconds
+                {
+                    if (proc.HasExited) return false;
+                    proc.Refresh();
+                    if (proc.MainWindowHandle != IntPtr.Zero) return true;
+                    Thread.Sleep(100);
+                }
+                return !proc.HasExited;
+            });
+
+            if (!windowReady) { configButton.Enabled = true; return; }
+
+            EnsureExplorerRunning();
+            Close();
         }
 
         private void CloseButton_Click(object? sender, EventArgs e)

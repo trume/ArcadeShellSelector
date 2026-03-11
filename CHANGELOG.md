@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.6] - 2026-03-11
+
+### Added
+- **Input indicator on bottom bar** — A subtle label at the bottom of the launcher shows the active input method (🎮 XInput, 🎮 DInput, 🎮 XInput + DInput, or ⌨ Keyboard) so the user always knows which controller input is enabled.
+- **Configuración button** — New button on the launcher bottom bar launches ArcadeShellConfigurator directly. Smooth async handoff polls the configurator window before closing the launcher, avoiding a visible gap or hourglass cursor.
+- **Controller navigation for buttons** — Gamepad navigation (DInput/XInput) now cycles through option cards, Configuración, and Salir/Exit using a unified `_navIndex`.
+- **Single-instance configurator** — ArcadeShellConfigurator uses a named Mutex to prevent multiple instances from running simultaneously.
+
+### Fixed
+- **Music volume drops after hover-out** — Thumb video player and main music shared the same Windows audio session; stopping the thumb player left the process-wide mixer at the thumb volume. Now restores `musicPlayer.ConfiguredVolume` when the thumb video stops.
+- **Thumb video volume too loud after returning from child process** — Volume is now explicitly set before `Play()` and re-applied after the `EndReached` loop restart.
+- **Magenta text antialiasing fringe** — Labels on overlay/spectrum forms had magenta-tinted edges because `TransparencyKey` was `Color.Magenta`. Changed to `Color.FromArgb(1, 1, 1)` (near-black).
+- **FirstRunGuard button top border clipped** — Label bottom edge overlapped buttons. Adjusted button Y-position and form height.
+
+### Changed
+- **FirstRunGuard UI polish** — Custom image from `Media\Img\firstrun.png` (fallback to system icon), centered buttons with distinct sizes, no blue AcceptButton highlight.
+- **Option label font** — Increased from 14pt Regular to 18pt Bold for better readability on arcade monitors.
+- **Launcher bottom bar layout** — Author icon + text, Configuración button, Salir/Exit button, and input indicator are all centered on a single line.
+
 ## [1.0.4] - 2026-03-11
 
 ### Added
