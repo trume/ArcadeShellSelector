@@ -50,6 +50,8 @@ Core goals:
 - Shell-friendly behavior (starts `explorer.exe` on exit when needed).
 - Optional LedBlinky integration for arcade LED feedback.
 - `lib\` assembly probing via `[ModuleInitializer]` + `AssemblyLoadContext` (resilient on .NET 10).
+- First-run guard: detects unconfigured state (missing `config.json` or empty options list) and prompts the user to open the Configurator or exit before any UI is shown.
+- Configurable boot splash bypass (`arranque.bootSplashEnabled`) to skip the terminal animation and go straight to the launcher.
 
 ### ArcadeShellConfigurator (companion app)
 
@@ -157,6 +159,8 @@ Packaging output:
 - Deploy folder: `deploy\ArcadeShell\`
 - Zip artifact: `deploy\ArcadeShell-v<version>-win-x64.zip`
 
+The publish script also writes a clean first-run `config.json` into the deploy folder (empty options, blank paths, features disabled) so fresh installations always trigger the first-run guard.
+
 ## Shell Replacement (Registry)
 
 To replace Windows Explorer with `ArcadeShellSelector.exe`, the shell value in Winlogon must point to your launcher executable.
@@ -212,6 +216,7 @@ Primary config file:
 Important sections (high-level):
 
 - UI settings (title, top-most, layout ratios)
+- Startup settings (`arranque`): `bootSplashEnabled` — skip or show the terminal boot animation.
 - Path settings (tools root, images root, video background, network wait)
 - Options list (label, exe, image, optional thumb video, wait behavior)
 - Music settings (enabled, root, file list, volume, audio device)
@@ -277,12 +282,15 @@ Recommended workflow:
 ```text
 App start
   -> LibProber [ModuleInitializer] registers lib\ assembly resolver
+  -> Program.cs loads AppConfig
+  -> FirstRunGuard checks config state
+       -> If unconfigured: prompt to open Configurator or exit (app never launches unconfigured)
   -> Program.cs pre-creates Launcher (hidden)
-  -> BootSplash shown (full-screen terminal animation + HDD sound)
+  -> BootSplash shown (if arranque.bootSplashEnabled; full-screen terminal animation + HDD sound)
        -> 11-second cursor blink pre-phase (skippable)
        -> Typed boot sequence with real system/config data
        -> FormClosing: Launcher.Show() — both windows alive simultaneously (no desktop flash)
-  -> BootSplash closes; Application.Run(launcher)
+  -> BootSplash closes (or skipped); Application.Run(launcher)
   -> Launcher loads AppConfig, initialises media + input
   -> Input loop polls keyboard/gamepad
   -> User selects option
@@ -293,8 +301,9 @@ App start
 
 ### Key internal modules
 
-- `Program.cs`: entry point; `LibProber [ModuleInitializer]` for `lib\` assembly probing, seamless splash→launcher transition.
-- `BootSplash.cs`: full-screen CRT-style terminal boot animation (Courier New, scanlines, vignette, phosphor tint, random pauses, NAudio HDD sound loop, 11 s cursor pre-phase).
+- `Program.cs`: entry point; `LibProber [ModuleInitializer]` for `lib\` assembly probing, first-run guard, seamless splash→launcher transition.
+- `FirstRunGuard.cs`: detects unconfigured state and shows a standard dialog prompting the user to open the Configurator or exit.
+- `BootSplash.cs`: full-screen CRT-style terminal boot animation (Courier New, scanlines, vignette, phosphor tint, random pauses, NAudio HDD sound loop, 11 s cursor pre-phase); skippable via `arranque.bootSplashEnabled`.
 - `Launcher.cs`: primary UI lifecycle, selection logic, app launch flow.
 - `AppConfig.cs`: config model and file loading/validation.
 - `VideoBackground.cs`: background video management via LibVLC.
@@ -317,6 +326,7 @@ ArcadeShellSelector.sln
 |   |-- ConfigForm.cs
 |   |-- InputVisualPanel.cs
 |-- Program.cs
+|-- FirstRunGuard.cs
 |-- BootSplash.cs
 |-- Launcher.cs
 |-- AppConfig.cs
