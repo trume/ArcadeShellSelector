@@ -4,31 +4,59 @@
     "TopMost": true,
     "MinImageSizePx": 180,
     "ImageHeightRatio": 0.32,
-    "ImageWidthRatioPerOption": 0.4
+    "ImageWidthRatioPerOption": 0.4,
+    "spectrumBands": 16
   },
   "paths": {
-    "toolsRoot": "",
-    "imagesRoot": "",
+    "toolsRoot": "C:\\",
+    "imagesRoot": "C:\\Users\\trume76\\ArcadeShellSelector\\bin\\Release\\net10.0-windows\\Media\\Img",
     "networkWaitSeconds": 15,
-    "videoBackground": ""
+    "videoBackground": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Bkg\\Background.mp4",
+    "videoPlaybackRate": 1.15
   },
-  "options": [],
+  "options": [
+    {
+      "label": "CoinOps",
+      "exe": "D:\\Emu\\CoinOPS Next\\CoinOPS.exe",
+      "image": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Img\\CoinOPS Next.jpg",
+      "thumbVideo": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Video\\2 On 2 Open Ice Challenge-01.mp4"
+    },
+    {
+      "label": "CoinOps",
+      "exe": "D:\\Emu\\CoinOPS Next\\CoinOPS.exe",
+      "image": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Img\\CoinOPS Helper.jpg",
+      "thumbVideo": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Video\\1000 Miglia_ Great 1000 Miles Rally-01.mp4"
+    },
+    {
+      "label": "CoinOps",
+      "exe": "D:\\Emu\\CoinOPS Next\\CoinOPS.exe",
+      "image": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Img\\MAME.png",
+      "thumbVideo": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Video\\bloodwar.avi"
+    },
+    {
+      "label": "Hyperspin",
+      "exe": "D:\\Emu\\CoinOPS Next\\CoinOPS.exe",
+      "image": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Img\\Atari 7800.png",
+      "thumbVideo": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Video\\3countb.avi"
+    }
+  ],
   "music": {
-    "enabled": false,
-    "musicRoot": "",
+    "enabled": true,
+    "musicRoot": "C:\\Users\\trume76\\ArcadeShellSelector\\bin\\Release\\net10.0-windows\\Media\\Music",
     "playRandom": false,
-    "selectedFile": "",
+    "selectedFile": "ELYSIUM.MOD",
     "volume": 100,
-    "thumbVideoVolume": 0
+    "audioDevice": "Altavoces (Realtek(R) Audio)",
+    "thumbVideoVolume": 29
   },
   "Autor": {
     "Quien": "2026.Trume76"
   },
   "Depuracion": {
-    "Activa": false
+    "Activa": true
   },
   "input": {
-    "xinputEnabled": false,
+    "xinputEnabled": true,
     "dinputEnabled": true,
     "dinputButtonSelect": 1,
     "dinputButtonBack": 2,
@@ -47,6 +75,6 @@
     "exePath": ""
   },
   "arranque": {
-    "bootSplashEnabled": true
+    "bootSplashEnabled": false
   }
 }

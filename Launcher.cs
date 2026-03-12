@@ -64,6 +64,8 @@ namespace ArcadeShellSelector
         private Task? _resumeTask;
         private CancellationTokenSource? _musicDiagCts;
         private System.Windows.Forms.Timer? _zOrderTimer;
+        private Label? _networkStatusLabel;
+        private bool _closing;
 
         public Launcher(AppConfig? preloadedConfig = null)
         {
@@ -83,6 +85,8 @@ namespace ArcadeShellSelector
                     Environment.Exit(1);
                     return;
                 }
+                if (loadErr != null)
+                    DebugLogger.Warn("CONFIG", loadErr);
             }
             config = cfg!;
             DebugLogger.Init(config.Activa.Activa);
@@ -106,15 +110,15 @@ namespace ArcadeShellSelector
             xinputTimer.Tick += XinputTimer_Tick;
             if (config.Input.XInputEnabled)
             {
-                DebugLogger.Log("XInput", xinputController.IsConnected
+                DebugLogger.Info("XInput", xinputController.IsConnected
                     ? "Controller connected (UserIndex.One)"
                     : "No controller connected");
                 xinputTimer.Start();
-                DebugLogger.Log("XInput", "Timer started.");
+                DebugLogger.Info("XInput", "Timer started.");
             }
             else
             {
-                DebugLogger.Log("XInput", "Disabled in config.");
+                DebugLogger.Info("XInput", "Disabled in config.");
             }
 
             InitDirectInput();
@@ -122,6 +126,7 @@ namespace ArcadeShellSelector
 
         private void XinputTimer_Tick(object? sender, EventArgs e)
         {
+            if (_closing) return;
             if (!xinputController.IsConnected)
                 return;
 
@@ -216,13 +221,13 @@ namespace ArcadeShellSelector
 
                 if (devices.Count == 0)
                 {
-                    DebugLogger.Log("DInput", "No non-XInput joystick/gamepad found.");
+                    DebugLogger.Warn("DInput", "No non-XInput joystick/gamepad found.");
                     // Log skipped devices for diagnostics
                     var all = _directInput
                         .GetDevices(SharpDX.DirectInput.DeviceType.Gamepad, DeviceEnumerationFlags.AttachedOnly)
                         .Concat(_directInput.GetDevices(SharpDX.DirectInput.DeviceType.Joystick, DeviceEnumerationFlags.AttachedOnly));
                     foreach (var d in all)
-                        DebugLogger.Log("DInput", $"Skipped (XInput): {d.ProductName} [{d.InstanceGuid}]");
+                        DebugLogger.Info("DInput", $"Skipped (XInput): {d.ProductName} [{d.InstanceGuid}]");
                     return;
                 }
 
@@ -233,7 +238,11 @@ namespace ArcadeShellSelector
                     ? devices.FirstOrDefault(d => string.Equals(d.ProductName,
                           config.Input.DInputDeviceName, StringComparison.OrdinalIgnoreCase))
                     : null) ?? devices[0];
-                DebugLogger.Log("DInput", $"Using: {preferred.ProductName}{(preferred == devices[0] && !string.IsNullOrWhiteSpace(config.Input.DInputDeviceName) ? " (preferred not found, fell back to first)" : "")}");
+                var fellBack = preferred == devices[0] && !string.IsNullOrWhiteSpace(config.Input.DInputDeviceName);
+                if (fellBack)
+                    DebugLogger.Warn("DInput", $"Using: {preferred.ProductName} (preferred not found, fell back to first)");
+                else
+                    DebugLogger.Info("DInput", $"Using: {preferred.ProductName}");
                 var joystick = new Joystick(_directInput, preferred.InstanceGuid);
                 joystick.SetCooperativeLevel(Handle, CooperativeLevel.Background | CooperativeLevel.NonExclusive);
                 joystick.Acquire();
@@ -242,16 +251,17 @@ namespace ArcadeShellSelector
                 _dinputTimer = new System.Windows.Forms.Timer { Interval = 100 };
                 _dinputTimer.Tick += DinputTimer_Tick;
                 _dinputTimer.Start();
-                DebugLogger.Log("DInput", "Timer started.");
+                DebugLogger.Info("DInput", "Timer started.");
             }
             catch (Exception ex)
             {
-                DebugLogger.Log("DInput", $"Init failed: {ex.Message}");
+                DebugLogger.Error("DInput", $"Init failed: {ex.Message}");
             }
         }
 
         private void DinputTimer_Tick(object? sender, EventArgs e)
         {
+            if (_closing) return;
             if (_dinputJoystick == null) return;
             try
             {
@@ -381,7 +391,7 @@ namespace ArcadeShellSelector
             Activated += (_, __) => EnforceZOrder();
 
             // Heartbeat: keep the overlay in front no matter what repaints underneath it.
-            _zOrderTimer = new System.Windows.Forms.Timer { Interval = 250 };
+            _zOrderTimer = new System.Windows.Forms.Timer { Interval = 1000 };
             _zOrderTimer.Tick += (_, __) => EnforceZOrder();
         }
 
@@ -389,6 +399,8 @@ namespace ArcadeShellSelector
         {
             // Initialize video background (resilient - exposes diagnostics)
             videoBackground = new VideoBackground();
+            if (Math.Abs(config.Paths.VideoPlaybackRate - 1.0f) > 0.001f)
+                videoBackground.SetPlaybackRate(config.Paths.VideoPlaybackRate);
 
             // Add the video surface first so overlays can be layered above it.
             try
@@ -399,7 +411,7 @@ namespace ArcadeShellSelector
                 Controls.Add(vbView);
                 try { vbView.SendToBack(); } catch { }
             }
-            catch { }
+            catch (Exception ex) { DebugLogger.Error("VIDEO", $"Surface init failed: {ex.Message}"); }
 
             // Create a transparent overlay form for all UI controls.
             // WinForms Color.Transparent only paints the parent's BackColor (dark gray),
@@ -545,8 +557,21 @@ namespace ArcadeShellSelector
             };
             AddOverlayControl(_inputIndicator);
 
+            // Network status label — hidden until a UNC path launch needs to wait
+            _networkStatusLabel = new Label
+            {
+                Text = "",
+                AutoSize = false,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Font = new Font("Segoe UI", 14F, FontStyle.Regular),
+                ForeColor = Color.FromArgb(220, 180, 255, 180),
+                BackColor = Color.FromArgb(180, 0, 0, 0),
+                Visible = false,
+            };
+            AddOverlayControl(_networkStatusLabel);
+
             // Spectrum analyzer — WASAPI loopback, no LibVLC interference
-            spectrumAnalyzer = new SpectrumAnalyzer();
+            spectrumAnalyzer = new SpectrumAnalyzer(config.Ui.SpectrumBands);
             spectrumPanel = new SpectrumPanel(spectrumAnalyzer)
             {
                 Dock = DockStyle.Fill,
@@ -703,7 +728,7 @@ namespace ArcadeShellSelector
                     }
                 }
             }
-            catch { }
+            catch (Exception ex) { DebugLogger.Error("MUSIC", $"Init failed: {ex.Message}"); }
 
             // 3. Spectrum analyzer — depends on audio playing
             try
@@ -711,7 +736,7 @@ namespace ArcadeShellSelector
                 spectrumAnalyzer?.Start();
                 spectrumPanel?.StartRefresh();
             }
-            catch { }
+            catch (Exception ex) { DebugLogger.Error("SPECTRUM", $"Startup failed: {ex.Message}"); }
 
             // 4. LEDBlinky — signal front-end start + animation
             try
@@ -720,7 +745,7 @@ namespace ArcadeShellSelector
                 _ledBlinky.FrontEndStart();
                 _ledBlinky.StartAnimation();
             }
-            catch { }
+            catch (Exception ex) { DebugLogger.Warn("LEDBLINKY", $"Init failed: {ex.Message}"); }
 
             // If music fails to start, show a one-time diagnostic so the user knows why.
             try
@@ -851,7 +876,52 @@ namespace ArcadeShellSelector
             }
         }
 
-        private void LogLaunch(string msg) => DebugLogger.Log("LAUNCH", msg);
+        private void LogLaunch(string msg) => DebugLogger.Info("LAUNCH", msg);
+        private void LogLaunchWarn(string msg) => DebugLogger.Warn("LAUNCH", msg);
+        private void LogLaunchError(string msg) => DebugLogger.Error("LAUNCH", msg);
+
+        /// <summary>
+        /// For UNC paths, waits for the network file to become reachable while
+        /// showing a status label on the overlay. Returns true if the file exists.
+        /// </summary>
+        private async Task<bool> WaitForUncPathAsync(string exePath)
+        {
+            var waitSeconds = Math.Clamp(config.Paths.NetworkWaitSeconds, 0, 120);
+            if (waitSeconds <= 0) return File.Exists(exePath);
+
+            LogLaunch($"Waiting up to {waitSeconds}s for UNC path...");
+
+            // Show network status on the overlay
+            if (_networkStatusLabel != null)
+            {
+                var sw = this.ClientSize.Width;
+                var labelW = Math.Min(600, sw - 40);
+                _networkStatusLabel.Size = new Size(labelW, 44);
+                _networkStatusLabel.Location = new Point((sw - labelW) / 2, this.ClientSize.Height / 2 - 22);
+                _networkStatusLabel.Text = "Connecting to network\u2026";
+                _networkStatusLabel.Visible = true;
+                _networkStatusLabel.BringToFront();
+            }
+
+            var deadline = DateTime.UtcNow.AddSeconds(waitSeconds);
+            bool found = false;
+            int dots = 0;
+            while (DateTime.UtcNow < deadline)
+            {
+                found = await Task.Run(() => File.Exists(exePath));
+                if (found) break;
+                dots = (dots % 3) + 1;
+                if (_networkStatusLabel != null)
+                    _networkStatusLabel.Text = "Connecting to network" + new string('.', dots);
+                await Task.Delay(500);
+            }
+
+            if (_networkStatusLabel != null)
+                _networkStatusLabel.Visible = false;
+
+            LogLaunch($"UNC wait done, File.Exists={found}");
+            return found;
+        }
 
         private async Task OnOptionClickedAsync(PictureBox clickedPic, string exePath, string? waitForProcessName)
         {
@@ -871,6 +941,11 @@ namespace ArcadeShellSelector
             selectedPic = clickedPic;
             RefreshSelectionVisuals();
 
+            // For UNC paths, wait for network accessibility while the UI is still visible
+            bool isUnc = exePath.StartsWith(@"\\", StringComparison.Ordinal);
+            if (isUnc)
+                await WaitForUncPathAsync(exePath);
+
             // disable UI while child runs
             foreach (var (pic, _, _, _) in optionUis)
                 pic.Enabled = false;
@@ -879,6 +954,7 @@ namespace ArcadeShellSelector
             // stop XInput polling so child app gets exclusive gamepad
             try { xinputTimer?.Stop(); } catch { }
             try { _dinputTimer?.Stop(); } catch { }
+            try { _zOrderTimer?.Stop(); } catch { }
 
             // stop spectrum (lightweight, safe on UI thread)
             try { spectrumPanel?.StopRefresh(); } catch { }
@@ -891,8 +967,8 @@ namespace ArcadeShellSelector
             // Stop music & pause video on background thread (LibVLC Stop() is blocking)
             await Task.Run(() =>
             {
-                try { musicPlayer?.Stop(); } catch { }
-                try { videoBackground?.Pause(); } catch { }
+                try { musicPlayer?.Stop(); } catch (Exception ex) { DebugLogger.Warn("LAUNCH", $"Music stop: {ex.Message}"); }
+                try { videoBackground?.Pause(); } catch (Exception ex) { DebugLogger.Warn("LAUNCH", $"Video pause: {ex.Message}"); }
             });
 
             // Signal LEDBlinky: game starting
@@ -914,7 +990,7 @@ namespace ArcadeShellSelector
                 Activate();
                 if (!config.Ui.TopMost) TopMost = false;
             }
-            catch { }
+            catch (Exception ex) { DebugLogger.Warn("LAUNCH", $"Window restore: {ex.Message}"); }
 
             // Small delay to let WinForms finish processing the maximize before showing owned forms
             await Task.Delay(200);
@@ -931,18 +1007,18 @@ namespace ArcadeShellSelector
                     _overlayForm.BringToFront();
                 }
             }
-            catch { }
+            catch (Exception ex) { DebugLogger.Warn("LAUNCH", $"Overlay restore: {ex.Message}"); }
 
             // Resume video & music on a background thread (store task so next launch can await it)
             _resumeTask = Task.Run(() =>
             {
-                try { videoBackground?.Resume(); } catch { }
-                try { musicPlayer?.Resume(); } catch { }
+                try { videoBackground?.Resume(); } catch (Exception ex) { DebugLogger.Warn("LAUNCH", $"Video resume: {ex.Message}"); }
+                try { musicPlayer?.Resume(); } catch (Exception ex) { DebugLogger.Warn("LAUNCH", $"Music resume: {ex.Message}"); }
             });
 
             // Restart spectrum
-            try { spectrumAnalyzer?.Start(); } catch { }
-            try { spectrumPanel?.StartRefresh(); } catch { }
+            try { spectrumAnalyzer?.Start(); } catch (Exception ex) { DebugLogger.Warn("SPECTRUM", $"Restart failed: {ex.Message}"); }
+            try { spectrumPanel?.StartRefresh(); } catch (Exception ex) { DebugLogger.Warn("SPECTRUM", $"Refresh restart failed: {ex.Message}"); }
 
             // Signal LEDBlinky: back to animation / attract mode
             try { _ledBlinky?.StartAnimation(); } catch { }
@@ -954,6 +1030,7 @@ namespace ArcadeShellSelector
             // resume XInput polling
             try { xinputTimer?.Start(); } catch { }
             try { _dinputTimer?.Start(); } catch { }
+            try { _zOrderTimer?.Start(); } catch { }
 
             _childRunning = false;
 
@@ -973,21 +1050,10 @@ namespace ArcadeShellSelector
 
                 var isUnc = exePath.StartsWith(@"\\", StringComparison.Ordinal);
                 LogLaunch($"isUnc={isUnc}");
-                var waitSeconds = Math.Clamp(config.Paths.NetworkWaitSeconds, 0, 120);
-                if (waitSeconds > 0 && isUnc)
-                {
-                    LogLaunch($"Waiting up to {waitSeconds}s for UNC path...");
-                    var deadline = DateTime.UtcNow.AddSeconds(waitSeconds);
-                    while (DateTime.UtcNow < deadline && !File.Exists(exePath))
-                    {
-                        Thread.Sleep(500);
-                    }
-                    LogLaunch($"UNC wait done, File.Exists={File.Exists(exePath)}");
-                }
 
                 if (!File.Exists(exePath))
                 {
-                    LogLaunch($"ERROR: File not found: {exePath}");
+                    LogLaunchError($"File not found: {exePath}");
                     var hint = isUnc
                         ? "\n\nUNC path not reachable yet. If this runs at logon as shell, the network may not be ready. Try increasing paths.networkWaitSeconds or verify the server/share name."
                         : "\n\nConfirm the path exists and you have permissions.";
@@ -1014,7 +1080,7 @@ namespace ArcadeShellSelector
                 }
                 catch (Exception ex1)
                 {
-                    LogLaunch($"Process.Start FAILED: {ex1.Message}, trying UseShellExecute=true");
+                    LogLaunchWarn($"Process.Start FAILED: {ex1.Message}, trying UseShellExecute=true");
                     // fallback: try with shell execute if direct start fails (some shells or associations require it)
                     try
                     {
@@ -1024,7 +1090,7 @@ namespace ArcadeShellSelector
                     }
                     catch (Exception ex2)
                     {
-                        LogLaunch($"ShellExecute also FAILED: {ex2.Message}");
+                        LogLaunchError($"ShellExecute also FAILED: {ex2.Message}");
                         proc = null;
                     }
                 }
@@ -1075,7 +1141,7 @@ namespace ArcadeShellSelector
                             LogLaunch($"  Exit check #{exitChecks}: still running ({procs.Length} instances)");
                         Thread.Sleep(1000);
                     }
-                    LogLaunch($"  Max wait reached ({maxWaitSeconds}s), giving up");
+                    LogLaunchWarn($"  Max wait reached ({maxWaitSeconds}s), giving up");
                 }
 
                 // Strategy: if waitForProcessName is configured, use it as
@@ -1095,7 +1161,7 @@ namespace ArcadeShellSelector
                 {
                     LogLaunch("Using proc.WaitForExit strategy (no waitForProcessName)");
                     // No waitForProcessName configured — use proc.WaitForExit with a timeout
-                    try { proc.WaitForExit(3600 * 1000); } catch { }
+                    try { proc.WaitForExit(3600 * 1000); } catch (Exception ex) { LogLaunchWarn($"WaitForExit exception: {ex.Message}"); }
                     LogLaunch("proc.WaitForExit returned");
                 }
                 else
@@ -1110,7 +1176,7 @@ namespace ArcadeShellSelector
             }
             catch (Exception ex)
             {
-                LogLaunch($"=== RunSelectedApp END (exception: {ex.Message}) ===");
+                LogLaunchError($"=== RunSelectedApp END (exception: {ex.Message}) ===");
                 var extra = exePath.StartsWith(@"\\", StringComparison.Ordinal)
                     ? "\n\nIf this is a NAS name, try using its IP or a resolvable DNS name (the server name may not be available at logon)."
                     : "";
@@ -1394,11 +1460,13 @@ namespace ArcadeShellSelector
 
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
+            _closing = true;
+
             // Signal LEDBlinky: front-end quitting
-            try { _ledBlinky?.FrontEndQuit(); } catch { }
+            try { _ledBlinky?.FrontEndQuit(); } catch (Exception ex) { DebugLogger.Warn("CLOSE", $"LEDBlinky quit: {ex.Message}"); }
 
             // cancel any pending music diagnostic task
-            try { _musicDiagCts?.Cancel(); } catch { }
+            try { _musicDiagCts?.Cancel(); } catch (Exception ex) { DebugLogger.Warn("CLOSE", $"CTS cancel: {ex.Message}"); }
 
             // stop and dispose timers
             _zOrderTimer?.Stop();
@@ -1408,31 +1476,31 @@ namespace ArcadeShellSelector
 
             _dinputTimer?.Stop();
             _dinputTimer?.Dispose();
-            try { _dinputJoystick?.Unacquire(); } catch { }
+            try { _dinputJoystick?.Unacquire(); } catch (Exception ex) { DebugLogger.Warn("CLOSE", $"DInput unacquire: {ex.Message}"); }
             _dinputJoystick?.Dispose();
             _directInput?.Dispose();
 
             // Owned forms are auto-closed by WinForms; no need to close overlay manually.
 
-            try { musicPlayer?.Dispose(); } catch { }
-            try { spectrumPanel?.StopRefresh(); } catch { }
-            try { spectrumAnalyzer?.Dispose(); } catch { }
+            try { musicPlayer?.Dispose(); } catch (Exception ex) { DebugLogger.Error("CLOSE", $"MusicPlayer dispose: {ex.Message}"); }
+            try { spectrumPanel?.StopRefresh(); } catch (Exception ex) { DebugLogger.Warn("CLOSE", $"SpectrumPanel stop: {ex.Message}"); }
+            try { spectrumAnalyzer?.Dispose(); } catch (Exception ex) { DebugLogger.Error("CLOSE", $"SpectrumAnalyzer dispose: {ex.Message}"); }
             // _spectrumForm is owned, so WinForms auto-closes it.
 
             // Stop thumb video rendering
-            try { StopThumbVideoInternal(); } catch { }
-            try { _thumbMedia?.Dispose(); } catch { }
-            try { _thumbPlayer?.Dispose(); } catch { }
-            try { _thumbLibVlc?.Dispose(); } catch { }
+            try { StopThumbVideoInternal(); } catch (Exception ex) { DebugLogger.Warn("CLOSE", $"Thumb stop: {ex.Message}"); }
+            try { _thumbMedia?.Dispose(); } catch (Exception ex) { DebugLogger.Warn("CLOSE", $"Thumb media dispose: {ex.Message}"); }
+            try { _thumbPlayer?.Dispose(); } catch (Exception ex) { DebugLogger.Warn("CLOSE", $"Thumb player dispose: {ex.Message}"); }
+            try { _thumbLibVlc?.Dispose(); } catch (Exception ex) { DebugLogger.Warn("CLOSE", $"Thumb libvlc dispose: {ex.Message}"); }
             if (_thumbBuffer != IntPtr.Zero)
             {
-                try { Marshal.FreeHGlobal(_thumbBuffer); } catch { }
+                try { Marshal.FreeHGlobal(_thumbBuffer); } catch (Exception ex) { DebugLogger.Warn("CLOSE", $"Thumb buffer free: {ex.Message}"); }
                 _thumbBuffer = IntPtr.Zero;
             }
 
             // Stop video synchronously before dispose to avoid blocking the UI thread.
-            try { videoBackground?.Stop(); } catch { }
-            try { videoBackground?.Dispose(); } catch { }
+            try { videoBackground?.Stop(); } catch (Exception ex) { DebugLogger.Error("CLOSE", $"VideoBackground stop: {ex.Message}"); }
+            try { videoBackground?.Dispose(); } catch (Exception ex) { DebugLogger.Error("CLOSE", $"VideoBackground dispose: {ex.Message}"); }
             base.OnFormClosed(e);
         }
 
@@ -1450,7 +1518,7 @@ namespace ArcadeShellSelector
                         vidPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, vidPath));
                     if (File.Exists(vidPath))
                     {
-                        try { videoBackground?.PlayLoop(vidPath); } catch { }
+                        try { videoBackground?.PlayLoop(vidPath); } catch (Exception ex) { DebugLogger.Error("VIDEO", $"PlayLoop failed: {ex.Message}"); }
                         return;
                     }
                 }

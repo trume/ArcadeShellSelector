@@ -42,7 +42,7 @@ namespace ArcadeShellSelector
             if (!_enabled) return;
             try
             {
-                DebugLogger.Log("LEDBLINKY", $"Sending: {_exePath} {args}");
+                DebugLogger.Info("LEDBLINKY", $"Sending: {_exePath} {args}");
                 var psi = new ProcessStartInfo
                 {
                     FileName = _exePath,
@@ -55,7 +55,7 @@ namespace ArcadeShellSelector
             }
             catch (Exception ex)
             {
-                DebugLogger.Log("LEDBLINKY", $"Error: {ex.Message}");
+                DebugLogger.Error("LEDBLINKY", $"Send failed: {ex.Message}");
             }
         }
     }

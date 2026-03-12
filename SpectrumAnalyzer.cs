@@ -11,7 +11,7 @@ namespace ArcadeShellSelector
     /// </summary>
     internal sealed class SpectrumAnalyzer : IDisposable
     {
-        public const int BandCount = 6;
+        public int BandCount { get; }
 
         // FFT size — 1024 samples gives ~43 Hz per bin at 44100 Hz
         private const int FftSize = 1024;
@@ -23,10 +23,17 @@ namespace ArcadeShellSelector
         private bool _disposed;
 
         // Latest band levels (0.0 – 1.0), updated from capture thread
-        private readonly float[] _bands = new float[BandCount];
+        private readonly float[] _bands;
 
         // Smoothed band levels for display
-        private readonly float[] _smoothBands = new float[BandCount];
+        private readonly float[] _smoothBands;
+
+        public SpectrumAnalyzer(int bandCount = 6)
+        {
+            BandCount = Math.Clamp(bandCount, 2, 32);
+            _bands = new float[BandCount];
+            _smoothBands = new float[BandCount];
+        }
 
         /// <summary>Get a snapshot of the current 6 band levels (0.0–1.0).</summary>
         public void GetBands(float[] dest)
@@ -52,17 +59,17 @@ namespace ArcadeShellSelector
                 _capture.RecordingStopped += (_, __) => { };
                 _capture.StartRecording();
                 var wf = _capture.WaveFormat;
-                DebugLogger.Log("SPECTRUM", $"Loopback capture started: {wf.SampleRate}Hz, {wf.Channels}ch, {wf.BitsPerSample}bit, {wf.Encoding}");
+                DebugLogger.Info("SPECTRUM", $"Loopback capture started: {wf.SampleRate}Hz, {wf.Channels}ch, {wf.BitsPerSample}bit, {wf.Encoding}");
             }
             catch (Exception ex)
             {
-                DebugLogger.Log("SPECTRUM", "Loopback capture failed: " + ex.Message);
+                DebugLogger.Error("SPECTRUM", "Loopback capture failed: " + ex.Message);
             }
         }
 
         public void Stop()
         {
-            DebugLogger.Log("SPECTRUM", "Stopping loopback capture.");
+            DebugLogger.Info("SPECTRUM", "Stopping loopback capture.");
             try { _capture?.StopRecording(); } catch { }
         }
 
@@ -128,10 +135,11 @@ namespace ArcadeShellSelector
             float sampleRate = _capture?.WaveFormat?.SampleRate ?? 48000f;
             float binHz = sampleRate / FftSize;
 
-            // Band frequency ranges (Hz) — logarithmic spacing:
-            //   0: 20-80,  1: 80-250,  2: 250-800,
-            //   3: 800-2500,  4: 2500-8000,  5: 8000-20000
-            int[] bandEdges = { 20, 80, 250, 800, 2500, 8000, 20000 };
+            // Band frequency edges (Hz) — logarithmic spacing from 20 Hz to 20 kHz
+            var bandEdges = new int[BandCount + 1];
+            const double freqLo = 20.0, freqHi = 20000.0;
+            for (int i = 0; i <= BandCount; i++)
+                bandEdges[i] = (int)(freqLo * Math.Pow(freqHi / freqLo, (double)i / BandCount));
 
             var newBands = new float[BandCount];
             for (int b = 0; b < BandCount; b++)
@@ -150,7 +158,11 @@ namespace ArcadeShellSelector
             // Apply log scaling for perceptual loudness.
             // Per-band reference levels: low bands have much more energy,
             // so they need a higher threshold to avoid saturation.
-            float[] bandRefLevel = { 0.1f, 0.05f, 0.025f, 0.01f, 0.005f, 0.003f };
+            // Per-band reference levels: low bands have much more energy.
+            // Generate dynamically based on band count, scaling from 0.1 (bass) to 0.003 (treble).
+            var bandRefLevel = new float[BandCount];
+            for (int b = 0; b < BandCount; b++)
+                bandRefLevel[b] = (float)(0.1 * Math.Pow(0.003 / 0.1, (double)b / (BandCount - 1)));
             const float dbRange = 50f;
             for (int b = 0; b < BandCount; b++)
             {

@@ -14,6 +14,7 @@ namespace ArcadeShellSelector
         public VideoView View { get; } = null!;
         private bool _disposed;
         private string? _currentPath;
+        private float _playbackRate = 1.0f;
         public bool Available { get; private set; } = true;
         public string? LastError { get; private set; }
 
@@ -92,9 +93,9 @@ namespace ArcadeShellSelector
 
                 var started = false;
                 try { started = _player.Play(); 
-                    if (started)
+                    if (started && Math.Abs(_playbackRate - 1.0f) > 0.001f)
                         {
-                            _player.SetRate(1.15f);
+                            _player.SetRate(_playbackRate);
                         }
                 }
                 catch (Exception ex) { LastError = ex.Message; 
@@ -109,7 +110,7 @@ namespace ArcadeShellSelector
             }
         }
 
-        private void LogVideoDebug(string msg) => DebugLogger.Log("VIDEO", msg);
+        private void LogVideoDebug(string msg) => DebugLogger.Info("VIDEO", msg);
 
         public void Stop()
         {
@@ -124,6 +125,12 @@ namespace ArcadeShellSelector
         public void Resume()
         {
             try { if (!_player.IsPlaying) _player.SetPause(false); } catch { }
+        }
+
+        public void SetPlaybackRate(float rate)
+        {
+            _playbackRate = Math.Clamp(rate, 0.25f, 4.0f);
+            try { if (_player.IsPlaying) _player.SetRate(_playbackRate); } catch { }
         }
 
         public void Dispose()

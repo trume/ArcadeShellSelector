@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-03-12
+
+### Added
+- **Structured log levels** — `DebugLogger` now supports `Info`, `Warn`, and `Error` levels with timestamped `[INF|WRN|ERR]` prefixes and component tags. All existing log calls upgraded across the codebase.
+- **Log rotation** — Log files are automatically rotated when they exceed 2 MB; the previous log is kept as a `.bak` file.
+- **Config validation** — `AppConfig.TryLoadFromFile` performs structural validation on load and returns a list of warnings (missing paths, out-of-range values) surfaced at startup.
+- **Network path feedback** — A status label on the launcher shows real-time connection status when waiting for UNC paths, so users on networked cabinets see progress instead of a frozen UI.
+- **LibVLC warm-up** — LibVLC core is pre-initialized on a background thread at startup, reducing first-video-play latency.
+- **Audio device GUID persistence** — `MusicConfig.AudioDeviceId` stores the device GUID alongside the friendly name. Device matching now tries the stable GUID first, falling back to the display name if the GUID is missing or stale.
+- **Binding countdown UI** — Gamepad button binding in the Configurator now shows an animated countdown hint (`🎮 Press a button… 5s`) that ticks down in real time, replacing the previous silent wait.
+- **Configurable spectrum bands** — `SpectrumAnalyzer` band count is now a constructor parameter (2–32) driven by `ui.spectrumBands` in `config.json`. Band frequency edges and reference levels are generated dynamically with logarithmic spacing.
+- **Video playback rate config** — Background video speed is now configurable via `paths.videoPlaybackRate` in `config.json` (clamped 0.25–4.0), replacing the hardcoded 1.15× multiplier.
+
+### Fixed
+- **ConfigForm resource leaks** — Five disposable resources (`_diJoystick`, `_diBindTimer`, `_xiBindTimer`, `_refreshTimer`, `_dirtyDebounce`) are now properly disposed in `OnFormClosed`, preventing handle leaks.
+- **Timer tick re-entrancy** — All timer tick handlers in the Launcher are guarded against overlapping execution, preventing rare race conditions during rapid UI events.
+- **Exception swallowing** — 30+ bare `catch { }` blocks across the Launcher now log the caught exception via `DebugLogger.Error`, making silent failures diagnosable.
+- **Idle CPU usage during child process** — The Z-order enforcement timer is now stopped while a child application is running and restarted on return, eliminating unnecessary CPU wake-ups.
+
+### Changed
+- **DPI awareness** — Both apps now declare `PerMonitorV2` high-DPI mode. `ConfigForm` uses `AutoScaleMode.Dpi` for correct scaling on high-resolution arcade monitors.
+- **Z-order timer interval** — Reduced from 250 ms to 1000 ms, cutting background overhead by 75% with no visible impact on window stacking behavior.
+
 ## [1.0.6] - 2026-03-11
 
 ### Added

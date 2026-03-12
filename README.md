@@ -6,17 +6,18 @@ It includes a companion tool, ArcadeShellConfigurator, to edit `config.json` vis
 ## Table Of Contents
 
 1. [Overview](#overview)
-2. [Main Features](#main-features)
-3. [Technology Stack](#technology-stack)
-4. [Requirements](#requirements)
-5. [Build And Run](#build-and-run)
-6. [Deploy And Packaging](#deploy-and-packaging)
-7. [Shell Replacement (Registry)](#shell-replacement-registry)
-8. [Configuration](#configuration)
-9. [Architecture](#architecture)
-10. [Project Structure](#project-structure)
-11. [Troubleshooting](#troubleshooting)
-12. [Repository Standards](#repository-standards)
+2. [Screenshots](#screenshots)
+3. [Main Features](#main-features)
+4. [Technology Stack](#technology-stack)
+5. [Requirements](#requirements)
+6. [Build And Run](#build-and-run)
+7. [Deploy And Packaging](#deploy-and-packaging)
+8. [Shell Replacement (Registry)](#shell-replacement-registry)
+9. [Configuration](#configuration)
+10. [Architecture](#architecture)
+11. [Project Structure](#project-structure)
+12. [Troubleshooting](#troubleshooting)
+13. [Repository Standards](#repository-standards)
 
 ## Overview
 
@@ -31,6 +32,16 @@ Core goals:
 - Rich media presentation (video background, tracker music, thumbnail previews).
 - Easy operations with a dedicated configurator and one-command packaging script.
 
+## Screenshots
+
+### ArcadeShellSelector — Launcher
+
+![ArcadeShellSelector main launcher](Media/Screenshots/launcher.png)
+
+### ArcadeShellConfigurator — Settings Editor
+
+![ArcadeShellConfigurator settings editor](Media/Screenshots/configurator.png)
+
 ## Main Features
 
 ### ArcadeShellSelector (main app)
@@ -38,20 +49,24 @@ Core goals:
 - Full-screen terminal boot animation (`BootSplash`) with CRT effects (scanlines, phosphor tint, vignette), typed line-by-line sequence populated with real system and config data, randomised timing pauses, 11-second cursor pre-phase with looped HDD sound via NAudio, and instant skip on keypress.
 - Seamless transition from boot splash to launcher — no visible desktop gap.
 - WinForms full-screen launcher for configured app options.
-- Video background playback using LibVLC.
+- Video background playback using LibVLC with configurable playback rate.
 - Tracker music playback (MOD/XM) with configurable volume and output device.
-- Real-time spectrum analyzer overlay using WASAPI loopback.
+- Real-time spectrum analyzer overlay using WASAPI loopback with configurable band count (2–32).
 - Gamepad support:
   - XInput polling for Xbox-compatible controllers.
   - DirectInput support for arcade encoders and joysticks.
 - Hover/select thumbnail video preview rendered via LibVLC software callbacks.
-- Optional debug logging for diagnostics.
-- Network path wait logic for UNC executable paths.
+- Structured diagnostic logging with Info/Warn/Error levels, component tags, and automatic 2 MB log rotation.
+- Network path wait logic with real-time status feedback for UNC executable paths.
 - Shell-friendly behavior (starts `explorer.exe` on exit when needed).
 - Optional LedBlinky integration for arcade LED feedback.
 - `lib\` assembly probing via `[ModuleInitializer]` + `AssemblyLoadContext` (resilient on .NET 10).
 - First-run guard: detects unconfigured state (missing `config.json` or empty options list) and prompts the user to open the Configurator or exit before any UI is shown.
 - Configurable boot splash bypass (`arranque.bootSplashEnabled`) to skip the terminal animation and go straight to the launcher.
+- Config validation at startup with surfaced warnings for missing paths and out-of-range values.
+- LibVLC background warm-up for reduced first-video latency.
+- PerMonitorV2 DPI awareness for correct rendering on high-resolution arcade monitors.
+- Idle CPU reduction: Z-order timer suspended while child processes run.
 
 ### ArcadeShellConfigurator (companion app)
 
@@ -63,13 +78,15 @@ Core goals:
   - Log
 - **Controles tab** — side-by-side DirectInput and XInput panels, each with:
   - Enable toggle and device/slot selector (auto-updates on plug/unplug).
-  - Interactive button binding (press to assign; Left/Right accept axis or POV).
+  - Interactive button binding with animated countdown hint (press to assign; Left/Right accept axis or POV).
   - Live test panel using `InputVisualPanel`: DInput shows stick + POV + button grid; XInput shows L Stick + R Stick + trigger bars + button pill-tags.
+- Audio device selection with stable GUID persistence (survives device re-enumeration).
 - Editable option grid with browse helpers for executables and images.
 - Video thumbnail and background preview support.
 - Dirty tracking to avoid accidental loss of unsaved edits.
 - Multi-destination `config.json` synchronization.
 - Launch button to start the main launcher directly.
+- PerMonitorV2 DPI awareness with `AutoScaleMode.Dpi`.
 - `lib\` assembly probing via `[ModuleInitializer]` + `AssemblyLoadContext`.
 
 ## Technology Stack
@@ -312,7 +329,7 @@ App start
 - `LibVlcManager.cs`: LibVLC lifecycle and shared concerns.
 - `LedBlinky.cs`: optional hardware LED integration.
 - `TrackerMetadata.cs`: tracker file metadata support.
-- `DebugLogger.cs`: optional diagnostics log.
+- `DebugLogger.cs`: structured diagnostic logging with Info/Warn/Error levels, component tags, and automatic log rotation.
 - `ArcadeShellConfigurator/ConfigForm.cs`: full configurator UI; DInput and XInput panels with interactive button binding and live `InputVisualPanel` test view.
 - `ArcadeShellConfigurator/InputVisualPanel.cs`: custom-drawn panel rendering stick positions, POV hat, trigger bars, and button states for both DInput and XInput modes.
 
@@ -340,6 +357,7 @@ ArcadeShellSelector.sln
 |-- config.json
 |-- publish.ps1
 |-- Media/
+|   |-- Screenshots/  (README images)
 |   |-- Sounds/   (boot audio)
 |   |-- Music/
 |   |-- Video/

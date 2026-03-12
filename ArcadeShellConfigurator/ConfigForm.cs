@@ -46,6 +46,7 @@ namespace ArcadeShellConfigurator
         private TrackBar trkThumbVideoVolume = null!;
         private Label lblThumbVideoVolumeValue = null!;
         private ComboBox cboAudioDevice = null!;
+        private readonly List<string> _audioDeviceIds = new();
         private CheckBox chkPlayRandom = null!;
         private ListBox lstMusicFiles = null!;
         private RichTextBox txtMetaInfo = null!;
@@ -80,6 +81,7 @@ namespace ArcadeShellConfigurator
         private Joystick? _bindJoystick;
         private DirectInput? _bindDInput;
         private bool[] _bindLastButtons = Array.Empty<bool>();
+        private Label _lblDiBindHint = null!;
 
         // Input test panel — DirectInput
         private GroupBox grpDI = null!;
@@ -119,6 +121,7 @@ namespace ArcadeShellConfigurator
         private int _xiBindSlot;
         private System.Windows.Forms.Timer? _xiBindTimer;
         private GamepadButtonFlags _xiBindLastButtons;
+        private Label _lblXiBindHint = null!;
 
         // Bottom panel
         private bool _suppressDirty;
@@ -202,6 +205,7 @@ namespace ArcadeShellConfigurator
         private void InitializeUI()
         {
             Text = "Arcade Shell Configurator";
+            AutoScaleMode = AutoScaleMode.Dpi;
             Size = new Size(860, 900);
             MinimumSize = new Size(820, 840);
             StartPosition = FormStartPosition.CenterScreen;
@@ -878,7 +882,7 @@ namespace ArcadeShellConfigurator
             btnBindLeft.Click   += (_, _) => { if (_bindingTarget == 2) CancelBind(); else StartBind(2); };
             btnBindRight.Click  += (_, _) => { if (_bindingTarget == 3) CancelBind(); else StartBind(3); };
 
-            var lblInputHint = new Label
+            _lblDiBindHint = new Label
             {
                 Text = "Pulsa ⊕ Asignar y presiona el botón en el dispositivo. Izquierda/Derecha también acepta eje o POV.",
                 Location = new Point(10, 282),
@@ -924,7 +928,7 @@ namespace ArcadeShellConfigurator
                         lblFnBack,   lblBindBack,   btnBindBack,
                         lblFnLeft,   lblBindLeft,   btnBindLeft,
                         lblFnRight,  lblBindRight,  btnBindRight,
-                lblInputHint,
+                _lblDiBindHint,
                 diSep3, btnTestDInput, lblTestDevice,
                 visualDInput, lblTestButtons, lblTestAxes
             });
@@ -943,7 +947,7 @@ namespace ArcadeShellConfigurator
                     btn.Location = new Point(right - btn.Width, btn.Top);
                     lbl.Width = btn.Left - lbl.Left - 6;
                 }
-                lblInputHint.Width = right - 10;
+                _lblDiBindHint.Width = right - 10;
                 visualDInput.Width = right - visualDInput.Left;
             };
 
@@ -1001,7 +1005,7 @@ namespace ArcadeShellConfigurator
             btnXiBindLeft.Click   += (_, _) => { if (_xiBindingTarget == 2) CancelXiBind(); else StartXiBind(2); };
             btnXiBindRight.Click  += (_, _) => { if (_xiBindingTarget == 3) CancelXiBind(); else StartXiBind(3); };
 
-            var lblXiHint = new Label
+            _lblXiBindHint = new Label
             {
                 Text = "Selecciona el slot activo, luego pulsa \u2295 Asignar y presiona el botón en el mando. Izquierda/Derecha: valor 0 usa DPad + palanca.",
                 Location = new Point(10, 282),
@@ -1047,7 +1051,7 @@ namespace ArcadeShellConfigurator
                     lblFnXiBack,   lblXiBindBack,   btnXiBindBack,
                     lblFnXiLeft,   lblXiBindLeft,   btnXiBindLeft,
                     lblFnXiRight,  lblXiBindRight,  btnXiBindRight,
-                lblXiHint,
+                _lblXiBindHint,
                 xiSep3, btnTestXInput, lblXInputStatus,
                 visualXInput, lblXInputButtons, lblXInputAxes
             });
@@ -1066,7 +1070,7 @@ namespace ArcadeShellConfigurator
                     btn.Location = new Point(right - btn.Width, btn.Top);
                     lbl.Width = btn.Left - lbl.Left - 6;
                 }
-                lblXiHint.Width = right - 10;
+                _lblXiBindHint.Width = right - 10;
 
                 // Bottom-pin axis and button text labels
                 int axesBottom = clientH - 8;
@@ -1324,7 +1328,9 @@ namespace ArcadeShellConfigurator
         private void PopulateAudioDevices()
         {
             cboAudioDevice.Items.Clear();
+            _audioDeviceIds.Clear();
             cboAudioDevice.Items.Add("(System Default)");
+            _audioDeviceIds.Add("");
 
             try
             {
@@ -1339,6 +1345,7 @@ namespace ArcadeShellConfigurator
                     var isDefault = defaultDevice != null &&
                                     string.Equals(dev.ID, defaultDevice.ID, StringComparison.OrdinalIgnoreCase);
                     cboAudioDevice.Items.Add(isDefault ? name + " *" : name);
+                    _audioDeviceIds.Add(dev.ID);
                 }
             }
             catch
@@ -1691,7 +1698,20 @@ namespace ArcadeShellConfigurator
             }
             // Select the matching audio device in the dropdown
             var savedDevice = _config.Music.AudioDevice ?? "";
+            var savedDeviceId = _config.Music.AudioDeviceId ?? "";
             cboAudioDevice.SelectedIndex = 0; // default = system default
+            if (!string.IsNullOrWhiteSpace(savedDeviceId))
+            {
+                // Try matching by device ID first (survives device renames)
+                for (int i = 0; i < _audioDeviceIds.Count; i++)
+                {
+                    if (string.Equals(_audioDeviceIds[i], savedDeviceId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        cboAudioDevice.SelectedIndex = i;
+                        goto deviceFound;
+                    }
+                }
+            }
             if (!string.IsNullOrWhiteSpace(savedDevice))
             {
                 for (int i = 0; i < cboAudioDevice.Items.Count; i++)
@@ -1705,6 +1725,7 @@ namespace ArcadeShellConfigurator
                     }
                 }
             }
+            deviceFound:;
 
             // Input
             chkXInputEnabled.Checked = _config.Input.XInputEnabled;
@@ -1787,6 +1808,8 @@ namespace ArcadeShellConfigurator
             if (selectedDevice.EndsWith(" *")) selectedDevice = selectedDevice[..^2];
             _config.Music.AudioDevice = (cboAudioDevice.SelectedIndex <= 0 || string.IsNullOrWhiteSpace(selectedDevice))
                 ? null : selectedDevice;
+            _config.Music.AudioDeviceId = (cboAudioDevice.SelectedIndex > 0 && cboAudioDevice.SelectedIndex < _audioDeviceIds.Count)
+                ? _audioDeviceIds[cboAudioDevice.SelectedIndex] : null;
 
             _config.Input.XInputEnabled      = chkXInputEnabled.Checked;
             _config.Input.DInputEnabled      = chkDInputEnabled.Checked;
@@ -2616,6 +2639,10 @@ namespace ArcadeShellConfigurator
                 btn.Enabled = tgt == target; // click again to cancel
             }
 
+            _lblDiBindHint.Text = "🎮 Presiona un botón en el dispositivo… 5s";
+            _lblDiBindHint.ForeColor = Color.FromArgb(0, 120, 215);
+            _lblDiBindHint.Font = new Font(_lblDiBindHint.Font, FontStyle.Bold | FontStyle.Italic);
+
             _bindTimer = new System.Windows.Forms.Timer { Interval = 50 };
             _bindTimer.Tick += BindTimer_Tick;
             _bindTimer.Start();
@@ -2629,6 +2656,9 @@ namespace ArcadeShellConfigurator
                 0 => btnBindSelect, 1 => btnBindBack,
                 2 => btnBindLeft,   3 => btnBindRight, _ => null };
             if (activeBtn != null) activeBtn.Text = secs > 0 ? $"● {secs}s…" : "● …";
+            _lblDiBindHint.Text = secs > 0
+                ? $"🎮 Presiona un botón en el dispositivo… {secs}s"
+                : "🎮 Presiona un botón en el dispositivo…";
 
             if (_bindJoystick == null) { CancelBind(); return; }
             try
@@ -2708,6 +2738,9 @@ namespace ArcadeShellConfigurator
                 btnBindBack.Text   = "⊕ Asignar"; btnBindBack.Enabled   = di;
                 btnBindLeft.Text   = "⊕ Asignar"; btnBindLeft.Enabled   = di;
                 btnBindRight.Text  = "⊕ Asignar"; btnBindRight.Enabled  = di;
+                _lblDiBindHint.Text = "Pulsa ⊕ Asignar y presiona el botón en el dispositivo. Izquierda/Derecha también acepta eje o POV.";
+                _lblDiBindHint.ForeColor = SystemColors.GrayText;
+                _lblDiBindHint.Font = new Font(_lblDiBindHint.Font, FontStyle.Italic);
             }
         }
 
@@ -2812,6 +2845,10 @@ namespace ArcadeShellConfigurator
 
             GetXiBindButton(target).Text = "✕ (5s)";
 
+            _lblXiBindHint.Text = "🎮 Presiona un botón en el mando… 5s";
+            _lblXiBindHint.ForeColor = Color.FromArgb(0, 120, 215);
+            _lblXiBindHint.Font = new Font(_lblXiBindHint.Font, FontStyle.Bold | FontStyle.Italic);
+
             _xiBindTimer = new System.Windows.Forms.Timer { Interval = 100 };
             _xiBindTimer.Tick += XiBindTimer_Tick;
             _xiBindTimer.Start();
@@ -2822,6 +2859,9 @@ namespace ArcadeShellConfigurator
             _xiBindCountdown--;
             int secsLeft = (_xiBindCountdown + 9) / 10; // ceiling: 50→5, 40→4…
             GetXiBindButton(_xiBindingTarget).Text = $"✕ ({secsLeft}s)";
+            _lblXiBindHint.Text = secsLeft > 0
+                ? $"🎮 Presiona un botón en el mando… {secsLeft}s"
+                : "🎮 Presiona un botón en el mando…";
 
             var ctrl = new Controller((UserIndex)_xiBindSlot);
             if (ctrl.IsConnected)
@@ -2870,6 +2910,12 @@ namespace ArcadeShellConfigurator
                 GetXiBindButton(_xiBindingTarget).Text = "\u2295 Asignar";
                 _xiBindingTarget = -1;
             }
+            if (!IsDisposed)
+            {
+                _lblXiBindHint.Text = "Selecciona el slot activo, luego pulsa \u2295 Asignar y presiona el botón en el mando. Izquierda/Derecha: valor 0 usa DPad + palanca.";
+                _lblXiBindHint.ForeColor = SystemColors.GrayText;
+                _lblXiBindHint.Font = new Font(_lblXiBindHint.Font, FontStyle.Italic);
+            }
         }
 
         private void CancelXiBind()
@@ -2881,17 +2927,23 @@ namespace ArcadeShellConfigurator
         {
             StopVideoPreview();
             StopMusicPreview();
+            try { _previewMedia?.Dispose(); } catch { }
+            try { _previewPlayer?.Dispose(); } catch { }
             try { _videoPreviewPlayer?.Dispose(); } catch { }
             try { _previewLibVlc?.Dispose(); } catch { }
             StopDInputTest();
             StopXInputTest();
             CancelBind();
             CancelXiBind();
+            try { _bindJoystick?.Dispose(); } catch { }
+            try { _bindDInput?.Dispose(); } catch { }
             _logWatcher?.Dispose();
             _logRefreshTimer?.Stop();
             _logRefreshTimer?.Dispose();
             _deviceRescanTimer?.Stop();
             _deviceRescanTimer?.Dispose();
+            _videoPreviewTimer?.Stop();
+            _videoPreviewTimer?.Dispose();
             base.OnFormClosed(e);
         }
 

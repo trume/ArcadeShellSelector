@@ -12,13 +12,14 @@ namespace ArcadeShellSelector
     {
         private readonly SpectrumAnalyzer _analyzer;
         private readonly System.Windows.Forms.Timer _refreshTimer;
-        private readonly float[] _levels = new float[SpectrumAnalyzer.BandCount];
+        private readonly float[] _levels;
 
         private static readonly Color BarColor = Color.White;
 
         public SpectrumPanel(SpectrumAnalyzer analyzer)
         {
             _analyzer = analyzer;
+            _levels = new float[analyzer.BandCount];
 
             SetStyle(ControlStyles.OptimizedDoubleBuffer
                    | ControlStyles.AllPaintingInWmPaint
@@ -42,7 +43,7 @@ namespace ArcadeShellSelector
             base.OnPaint(e);
             var g = e.Graphics;
 
-            int bands = SpectrumAnalyzer.BandCount;
+            int bands = _analyzer.BandCount;
             int gap = 3;
             int totalGaps = (bands - 1) * gap;
             int barWidth = Math.Max(3, (Width - totalGaps) / bands);

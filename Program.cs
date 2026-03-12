@@ -3,6 +3,7 @@ using System.IO;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.Loader;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace ArcadeShellSelector
@@ -39,13 +40,23 @@ namespace ArcadeShellSelector
             ApplicationConfiguration.Initialize();
 
             var configPath = Path.Combine(AppContext.BaseDirectory, "config.json");
-            var (cfg, _) = AppConfig.TryLoadFromFile(configPath);
+            var (cfg, configErr) = AppConfig.TryLoadFromFile(configPath);
+
+            // Init logger early so config warnings are captured
+            DebugLogger.Init(cfg?.Activa.Activa ?? false);
+
+            // Log config warnings (non-fatal)
+            if (cfg != null && configErr != null)
+                DebugLogger.Warn("CONFIG", configErr);
 
             // ── First-run guard — must run before anything is shown on screen ────────
             bool isFirstRun = FirstRunGuard.IsFirstRun(configPath, cfg);
             if (FirstRunGuard.Evaluate(configPath, cfg))
                 return; // configurator launched or user closed — abort startup
             // ────────────────────────────────────────────────────────────────────────
+
+            // Warm up LibVLC on a background thread so native init overlaps with the boot splash.
+            _ = Task.Run(() => { try { _ = LibVlcManager.Instance; } catch { } });
 
             var launcher = new Launcher(cfg);
 

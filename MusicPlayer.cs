@@ -33,7 +33,9 @@ namespace ArcadeShellSelector
         private readonly bool _playRandom;
         private readonly string? _selectedFile;
 
-        private void LogDebug(string msg) => DebugLogger.Log("MUSIC", msg);
+        private void LogDebug(string msg) => DebugLogger.Info("MUSIC", msg);
+        private void LogMusicWarn(string msg) => DebugLogger.Warn("MUSIC", msg);
+        private void LogMusicError(string msg) => DebugLogger.Error("MUSIC", msg);
 
         public MusicPlayer(string baseDirectory, MusicConfig musicConfig)
         {
@@ -80,7 +82,7 @@ namespace ArcadeShellSelector
                 }
                 catch { }
             };
-            _mediaPlayer.EncounteredError += (_, __) => { _lastError = "Playback encountered an error."; try { LogDebug("Player event: EncounteredError"); } catch { } };
+            _mediaPlayer.EncounteredError += (_, __) => { _lastError = "Playback encountered an error."; try { LogMusicError("Player event: EncounteredError"); } catch { } };
             _mediaPlayer.Playing += (_, __) => { _lastError = null; try { LogDebug("Player event: Playing"); } catch { } };
             _mediaPlayer.Paused += (_, __) => { try { LogDebug("Player event: Paused"); } catch { } };
             _mediaPlayer.Buffering += (_, a) => { try { LogDebug($"Player event: Buffering {a}%"); } catch { } };
@@ -96,6 +98,7 @@ namespace ArcadeShellSelector
 
             // preferred audio device (optional)
             _audioDevice = string.IsNullOrWhiteSpace(musicConfig.AudioDevice) ? null : musicConfig.AudioDevice;
+            var audioDeviceId = string.IsNullOrWhiteSpace(musicConfig.AudioDeviceId) ? null : musicConfig.AudioDeviceId;
 
             // Route to the configured audio device using VLC's own device enumeration.
             // VLC's :audio-device= option requires the Windows endpoint GUID, NOT the friendly name.
@@ -103,24 +106,42 @@ namespace ArcadeShellSelector
             try
             {
                 _mediaPlayer.SetAudioOutput("mmdevice");
-                if (!string.IsNullOrWhiteSpace(_audioDevice))
+                if (!string.IsNullOrWhiteSpace(_audioDevice) || !string.IsNullOrWhiteSpace(audioDeviceId))
                 {
                     var vlcDevs = _libVlc?.AudioOutputDevices("mmdevice");
                     if (vlcDevs != null)
                     {
-                        foreach (var d in vlcDevs)
+                        // Try matching by device ID first (stable across renames)
+                        if (!string.IsNullOrWhiteSpace(audioDeviceId))
                         {
-                            if (string.Equals(d.Description, _audioDevice, StringComparison.OrdinalIgnoreCase))
+                            foreach (var d in vlcDevs)
                             {
-                                _mediaPlayer.SetOutputDevice(d.DeviceIdentifier);
-                                LogDebug($"Audio device set: {d.Description} ({d.DeviceIdentifier})");
-                                break;
+                                if (string.Equals(d.DeviceIdentifier, audioDeviceId, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    _mediaPlayer.SetOutputDevice(d.DeviceIdentifier);
+                                    LogDebug($"Audio device set by ID: {d.Description} ({d.DeviceIdentifier})");
+                                    goto deviceSet;
+                                }
                             }
                         }
+                        // Fall back to matching by friendly name
+                        if (!string.IsNullOrWhiteSpace(_audioDevice))
+                        {
+                            foreach (var d in vlcDevs)
+                            {
+                                if (string.Equals(d.Description, _audioDevice, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    _mediaPlayer.SetOutputDevice(d.DeviceIdentifier);
+                                    LogDebug($"Audio device set by name: {d.Description} ({d.DeviceIdentifier})");
+                                    break;
+                                }
+                            }
+                        }
+                        deviceSet:;
                     }
                 }
             }
-            catch (Exception ex) { try { LogDebug("Audio device setup failed: " + ex.Message); } catch { } }
+            catch (Exception ex) { try { LogMusicWarn("Audio device setup failed: " + ex.Message); } catch { } }
 
             // playback mode
             _playRandom = musicConfig.PlayRandom;
@@ -265,11 +286,11 @@ namespace ArcadeShellSelector
 
                 _mediaPlayer!.Media = _currentMedia;
                 bool started = false;
-                try { started = _mediaPlayer?.Play() ?? false; } catch (Exception ex) { _lastError = ex.Message; try { LogDebug("Play exception: " + ex.Message); } catch { } }
+                try { started = _mediaPlayer?.Play() ?? false; } catch (Exception ex) { _lastError = ex.Message; try { LogMusicError("Play exception: " + ex.Message); } catch { } }
                 if (!started)
                 {
                     _lastError ??= "Failed to start playback (LibVLC returned false).";
-                    try { LogDebug("Play returned false for media: " + path); } catch { }
+                    try { LogMusicWarn("Play returned false for media: " + path); } catch { }
                 }
                 else
                 {
@@ -289,7 +310,7 @@ namespace ArcadeShellSelector
             catch (Exception ex)
             {
                 _lastError ??= "Exception while attempting to play media.";
-                try { LogDebug("PlayPath exception: " + ex.Message); } catch { }
+                try { LogMusicError("PlayPath exception: " + ex.Message); } catch { }
             }
         }
 

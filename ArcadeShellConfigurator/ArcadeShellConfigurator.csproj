@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <ApplicationIcon>..\app.ico</ApplicationIcon>
     <!-- Output into the main app's bin folder so we share libvlc, lib, Media, config.json -->
     <OutputPath>..\bin\$(Configuration)\$(TargetFramework)</OutputPath>

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -52,7 +53,30 @@ namespace ArcadeShellSelector
                 };
                 var cfg = JsonSerializer.Deserialize<AppConfig>(json, opts);
                 if (cfg == null) return (null, "Deserialization returned null.");
-                return (cfg, null);
+
+                // Validate structural integrity
+                var warnings = new List<string>();
+
+                if (cfg.Options.Count == 0)
+                    warnings.Add("No options defined — the launcher will have nothing to show.");
+
+                foreach (var (opt, i) in cfg.Options.Select((o, i) => (o, i)))
+                {
+                    if (string.IsNullOrWhiteSpace(opt.Exe))
+                        warnings.Add($"Option #{i + 1} (\"{opt.Label}\"): exe path is empty.");
+                    if (string.IsNullOrWhiteSpace(opt.Label))
+                        warnings.Add($"Option #{i + 1}: label is empty.");
+                }
+
+                if (cfg.Music.Enabled && string.IsNullOrWhiteSpace(cfg.Music.MusicRoot) && string.IsNullOrWhiteSpace(cfg.Music.SelectedFile))
+                    warnings.Add("Music is enabled but no musicRoot or selectedFile is set.");
+
+                string? warn = warnings.Count > 0 ? string.Join("\n", warnings) : null;
+                return (cfg, warn);
+            }
+            catch (JsonException ex)
+            {
+                return (null, $"Invalid JSON: {ex.Message}");
             }
             catch (Exception ex)
             {
@@ -68,6 +92,9 @@ namespace ArcadeShellSelector
         public int MinImageSizePx { get; set; } = 180;
         public double ImageHeightRatio { get; set; } = 0.42;
         public double ImageWidthRatioPerOption { get; set; } = 0.26;
+
+        [JsonPropertyName("spectrumBands")]
+        public int SpectrumBands { get; set; } = 6;
     }
 
     public sealed class PathConfig
@@ -83,6 +110,9 @@ namespace ArcadeShellSelector
 
         [JsonPropertyName("videoBackground")]
         public string VideoBackground { get; set; } = string.Empty;
+
+        [JsonPropertyName("videoPlaybackRate")]
+        public float VideoPlaybackRate { get; set; } = 1.0f;
     }
 
     // NEW: Option model includes optional WaitForProcessName
@@ -124,6 +154,9 @@ namespace ArcadeShellSelector
 
         [JsonPropertyName("audioDevice")]
         public string? AudioDevice { get; set; }
+
+        [JsonPropertyName("audioDeviceId")]
+        public string? AudioDeviceId { get; set; }
 
         [JsonPropertyName("thumbVideoVolume")]
         public int ThumbVideoVolume { get; set; } = 0;
