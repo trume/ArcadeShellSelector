@@ -32,13 +32,31 @@ Comes with two companion tools:
 
 ### Mobile Remote — Phone Dashboard
 
-![Mobile app on phone](Media/Img/Mobile.png)
+<img src="Media/Img/Mobile.png" alt="Mobile app on phone" width="300" />
+
+---
+
+## Why this could be for you?
+
+🕹️ **Multiple frontends, one launcher** — CoinOPS, HyperSpin, RetroArch, BigBox, MAME… stop choosing one and launch them all from a single full-screen menu.
+
+📱 **Manage without a keyboard** — Change settings, switch themes, and edit options from your phone. No need to plug in a mouse or open a terminal.
+
+🎨 **Looks like an arcade, not a desktop** — Video backgrounds, CRT boot animations, tracker music with spectrum visualizer — your cabinet feels like a real machine, not a PC.
+
+🎮 **Any controller works** — Xbox pads, arcade encoders, Xin-Mo boards, keyboards — bind any button in seconds with the visual configurator.
+
+🔒 **Boot straight into the launcher** — Replace the Windows shell entirely. No desktop, no Start menu, no distractions. Just games.
+
+⚡ **Zero config on first run** — A setup guard walks you through configuration. No manual JSON editing required.
+
+🌐 **PIN-protected remote access** — The built-in server is secured by a PIN and only accessible on your local network.
 
 ---
 
 ## What It Does
 
-**ArcadeShellSelector** turns a Windows PC into a dedicated arcade cabinet. Instead of booting to the Windows desktop, your machine shows a full-screen launcher where every installed frontend (CoinOPS, HyperSpin, RetroArch, etc.) is a single button press away. If you want more than ONE FrontEnd Accesible. This could be for you...
+**ArcadeShellSelector** turns a Windows PC into a dedicated arcade cabinet. Instead of booting to the Windows desktop, your machine shows a full-screen launcher where every installed frontend (CoinOPS, HyperSpin, RetroArch, etc.) is a single button press away.
 
 ### For the player
 
