@@ -1612,6 +1612,17 @@ namespace ArcadeShellSelector
 
         private void StartRemoteServer()
         {
+            if (!config.RemoteAccess.Enabled)
+            {
+                DebugLogger.Info("REMOTE", "Remote access disabled — server not started");
+                return;
+            }
+            var configPath = Path.Combine(AppContext.BaseDirectory, "config.json");
+            if (FirstRunGuard.IsFirstRun(configPath, config))
+            {
+                DebugLogger.Info("REMOTE", "First run detected — server not started");
+                return;
+            }
             var serverExe = Path.Combine(AppContext.BaseDirectory, "ArcadeShellServer.exe");
             if (!File.Exists(serverExe))
             {

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.2.9] - 2026-03-13
+
+### Added
+- **Server startup guards** — `ArcadeShellServer.exe` now shows a MessageBox when launched directly if the app is not configured (first run) or remote access is explicitly disabled, instead of silently exiting.
+
+### Fixed
+- **Launcher server launch safety** — `StartRemoteServer()` now checks both `remoteAccess.enabled` and first-run state before spawning the server process.
+
 ## [1.2.0] - 2026-03-13
 
 ### Added

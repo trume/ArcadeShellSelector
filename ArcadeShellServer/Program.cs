@@ -27,17 +27,24 @@ string? sourceConfigPath = null;
 }
 
 var (cfg, err) = AppConfig.TryLoadFromFile(configPath);
-if (cfg == null)
+if (cfg == null || cfg.Options.Count == 0)
 {
-    Console.Error.WriteLine($"Failed to load config: {err}");
-    return 1;
+    System.Windows.Forms.MessageBox.Show(
+        "ArcadeShellSelector is not configured yet.\n\nPlease run the Configurator first to set up your options before starting the remote server.",
+        "ArcadeShellServer",
+        System.Windows.Forms.MessageBoxButtons.OK,
+        System.Windows.Forms.MessageBoxIcon.Information);
+    return 0;
 }
 
 var remote = cfg.RemoteAccess;
 if (!remote.Enabled)
 {
-    Console.WriteLine("Remote access is disabled in config.json (remoteAccess.enabled = false).");
-    Console.WriteLine("Enable it in the Configurator or set it manually, then restart.");
+    System.Windows.Forms.MessageBox.Show(
+        "Remote access is disabled in the configuration.\n\nEnable it in the Configurator (Remote Access → Enabled) or set remoteAccess.enabled to true in config.json, then restart.",
+        "ArcadeShellServer",
+        System.Windows.Forms.MessageBoxButtons.OK,
+        System.Windows.Forms.MessageBoxIcon.Information);
     return 0;
 }
 
