@@ -3,8 +3,8 @@
 A full-screen arcade launcher for Windows that replaces the desktop shell. Pick your frontend, fire it up, and get back to playing — all from a controller-friendly, cinematic interface with video backgrounds, music, and CRT-style boot animations.
 
 Comes with two companion tools:
-- **ArcadeShellConfigurator** — a visual settings editor for every aspect of the launcher.
-- **ArcadeShellServer** — a built-in mobile server so you can manage your cabinet from your phone.
+- **ArcadeShellConfigurator** — ![a visual settings editor for every aspect of the launcher.](Config1-preview.png)
+- **ArcadeShellServer** — ![a built-in mobile server so you can manage your cabinet from your phone.](HttpServ-preview.png)
 
 ---
 
@@ -34,11 +34,13 @@ Comes with two companion tools:
 
 ![Mobile remote control](Media/Screenshots/HttpServ-preview.png)
 
+![Mobile app on phone](Media/Img/Mobile.png)
+
 ---
 
 ## What It Does
 
-**ArcadeShellSelector** turns a Windows PC into a dedicated arcade cabinet. Instead of booting to the Windows desktop, your machine shows a full-screen launcher where every installed frontend (CoinOPS, HyperSpin, RetroArch, etc.) is a single button press away.
+**ArcadeShellSelector** turns a Windows PC into a dedicated arcade cabinet. Instead of booting to the Windows desktop, your machine shows a full-screen launcher where every installed frontend (CoinOPS, HyperSpin, RetroArch, etc.) is a single button press away. If you want more than ONE FrontEnd Accesible. This could be for you...
 
 ### For the player
 
