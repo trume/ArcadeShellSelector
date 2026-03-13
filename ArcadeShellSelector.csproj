@@ -10,10 +10,10 @@
     <Platforms>AnyCPU;x64</Platforms>
     <DefaultItemExcludes>$(DefaultItemExcludes);ArcadeShellConfigurator\**;ArcadeShellServer\**</DefaultItemExcludes>
     <!-- Version: bump Major.Minor.Patch manually; Build auto-set by publish.ps1 via /p:BuildNumber -->
-    <Version>1.2.3</Version>
+    <Version>1.2.4</Version>
     <AssemblyVersion>1.2.0.0</AssemblyVersion>
     <FileVersion>1.2.0.0</FileVersion>
-    <InformationalVersion>1.2.3</InformationalVersion>
+    <InformationalVersion>1.2.4</InformationalVersion>
   </PropertyGroup>
   <ItemGroup>
     <Content Include="config.json">
