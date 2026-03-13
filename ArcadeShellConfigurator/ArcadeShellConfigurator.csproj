@@ -20,6 +20,8 @@
     <Compile Include="..\AppConfig.cs" Link="AppConfig.cs" />
     <Compile Include="..\LibVlcManager.cs" Link="LibVlcManager.cs" />
     <Compile Include="..\TrackerMetadata.cs" Link="TrackerMetadata.cs" />
+    <Compile Include="..\ThemeResolver.cs" Link="ThemeResolver.cs" />
+    <Compile Include="..\DebugLogger.cs" Link="DebugLogger.cs" />
   </ItemGroup>
 
   <!-- Copy app.ico to output so the form can load it at runtime -->

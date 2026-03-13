@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>ArcadeShell Remote</title>
+<link rel="icon" href="/favicon.ico" type="image/x-icon">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<!-- PIN Login -->
+<div id="loginScreen" class="screen active">
+  <div class="login-box">
+    <h1>🕹️ ArcadeShell</h1>
+    <p>Acceso Remoto</p>
+    <input type="password" id="pinInput" maxlength="8" placeholder="PIN" inputmode="numeric" autocomplete="off">
+    <button id="btnLogin">Entrar</button>
+    <div id="loginError" class="error hidden"></div>
+  </div>
+</div>
+
+<!-- Main Dashboard -->
+<div id="mainScreen" class="screen">
+  <header>
+    <h1>🕹️ ArcadeShell</h1>
+    <nav>
+      <button class="tab active" data-tab="status">Estado</button>
+      <button class="tab" data-tab="settings">Ajustes</button>
+      <button class="tab" data-tab="options">Lanzadores</button>
+    </nav>
+  </header>
+
+  <!-- Status Tab -->
+  <section id="tab-status" class="tab-content active">
+    <div class="card">
+      <h2>Estado del Sistema</h2>
+      <div class="status-grid">
+        <div class="stat">
+          <span class="stat-label">Equipo</span>
+          <span class="stat-value" id="statHostname">—</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Tiempo activo</span>
+          <span class="stat-value" id="statUptime">—</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Servidor</span>
+          <span class="stat-value" id="statServer">—</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Controles</span>
+          <span class="stat-value" id="statInput">—</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Música</span>
+          <span class="stat-value" id="statMusic">—</span>
+        </div>
+      </div>
+    </div>
+    <button class="btn-refresh" id="btnRefreshStatus">Actualizar</button>
+  </section>
+
+  <!-- Settings Tab -->
+  <section id="tab-settings" class="tab-content">
+    <div class="card">
+      <h2>General</h2>
+      <div class="field">
+        <label for="cfgTitle">Título</label>
+        <input type="text" id="cfgTitle">
+      </div>
+      <div class="field">
+        <label for="cfgTopMost">Siempre visible</label>
+        <input type="checkbox" id="cfgTopMost">
+      </div>
+      <div class="field">
+        <label for="cfgBootSplash">Boot Splash</label>
+        <input type="checkbox" id="cfgBootSplash">
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Música</h2>
+      <div class="field">
+        <label for="cfgMusicEnabled">Activada</label>
+        <input type="checkbox" id="cfgMusicEnabled">
+      </div>
+      <div class="field">
+        <label for="cfgVolume">Volumen</label>
+        <input type="range" id="cfgVolume" min="0" max="100">
+        <span id="cfgVolumeVal">100</span>
+      </div>
+      <div class="field">
+        <label for="cfgThumbVol">Volumen thumb video</label>
+        <input type="range" id="cfgThumbVol" min="0" max="100">
+        <span id="cfgThumbVolVal">0</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Tema</h2>
+      <div class="field">
+        <label for="cfgPreset">Preset</label>
+        <select id="cfgPreset">
+          <option value="neon-green">Neon Green</option>
+          <option value="amber-crt">Amber CRT</option>
+          <option value="synthwave">Synthwave</option>
+          <option value="ice-blue">Ice Blue</option>
+          <option value="minimal-dark">Minimal Dark</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Acceso Remoto</h2>
+      <div class="field">
+        <label for="cfgRemotePort">Puerto</label>
+        <input type="number" id="cfgRemotePort" min="1024" max="65535">
+      </div>
+      <div class="field">
+        <label for="cfgRemotePin">PIN</label>
+        <input type="text" id="cfgRemotePin" maxlength="8" inputmode="numeric">
+      </div>
+    </div>
+
+    <button class="btn-save" id="btnSaveSettings">Guardar ajustes</button>
+  </section>
+
+  <!-- Options/Launchers Tab -->
+  <section id="tab-options" class="tab-content">
+    <div class="card">
+      <h2>Lanzadores</h2>
+      <div id="optionsList"></div>
+      <button class="btn-add" id="btnAddOption">+ Añadir opción</button>
+    </div>
+    <button class="btn-save" id="btnSaveOptions">Guardar cambios</button>
+  </section>
+
+  <div id="toast" class="toast hidden"></div>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>

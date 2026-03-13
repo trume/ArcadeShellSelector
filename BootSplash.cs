@@ -24,16 +24,20 @@ namespace ArcadeShellSelector
         /// <summary>
         /// Global typing speed multiplier. 1.0 = normal, 0.5 = twice as fast, 2.0 = half speed.
         /// </summary>
-        private const float SpeedScale = 0.13f;
+        private const float SpeedScale = 0.23f;
 
-        // ── Palette ─────────────────────────────────────────────────────────
-        private static readonly Color ColBg      = Color.Black;
-        private static readonly Color ColDefault = Color.FromArgb(0,  210,  70);   // main green
-        private static readonly Color ColDim     = Color.FromArgb(0,  110,  35);   // dim green (sep)
-        private static readonly Color ColBright  = Color.FromArgb(120, 255, 140);  // highlights / header
-        private static readonly Color ColCyan    = Color.FromArgb(0,  200, 220);   // [BOOT]
-        private static readonly Color ColYellow  = Color.FromArgb(210, 195,   0);  // [INIT]
-        private static readonly Color ColOrange  = Color.FromArgb(255, 140,   0);  // [WARN]
+        // ── Palette (resolved from ThemeResolver.Boot at construction) ─────
+        private readonly Color ColBg;
+        private readonly Color ColDefault;
+        private readonly Color ColDim;
+        private readonly Color ColBright;
+        private readonly Color ColCyan;
+        private readonly Color ColYellow;
+        private readonly Color ColOrange;
+        private readonly Color _phosphorTint;
+        private readonly int   _scanlineAlpha;
+        private readonly int   _vignetteAlpha;
+        private readonly bool  _crtEffects;
 
         // ── Line model ──────────────────────────────────────────────────────
         /// <param name="Text">Text content (empty = blank line / pause).</param>
@@ -77,11 +81,25 @@ namespace ArcadeShellSelector
         {
             FormBorderStyle = FormBorderStyle.None;
             WindowState     = FormWindowState.Maximized;
+            // Resolve theme palette
+            var tp = ThemeResolver.Boot;
+            ColBg      = tp.Bg;
+            ColDefault = tp.Primary;
+            ColDim     = tp.Dim;
+            ColBright  = tp.Bright;
+            ColCyan    = tp.Tag;
+            ColYellow  = tp.Init;
+            ColOrange  = tp.Warn;
+            _phosphorTint  = tp.PhosphorTint;
+            _scanlineAlpha = tp.ScanlineAlpha;
+            _vignetteAlpha = tp.VignetteAlpha;
+            _crtEffects    = tp.CrtEffects;
+
             BackColor       = ColBg;
             ShowInTaskbar   = false;
             TopMost         = true;
 
-            _font  = new Font("Courier New", 16f, FontStyle.Regular, GraphicsUnit.Point);
+            _font  = new Font(tp.Font, 16f, FontStyle.Regular, GraphicsUnit.Point);
             _lineH = _font.GetHeight() + 4f;
 
             _canvas = new DoubleBufferedPanel { Dock = DockStyle.Fill, BackColor = ColBg };
@@ -266,7 +284,7 @@ namespace ArcadeShellSelector
             }
 
             // ── RENDERER ────────────────────────────────────────────────────
-            Pause(300, 700);
+            Pause(1300, 1700);
             Boot("[BOOT] Warming up renderer...", 60);
             Pause(100, 350);
 
@@ -471,42 +489,52 @@ namespace ArcadeShellSelector
 
             // ── CRT effects ──────────────────────────────────────────────────
 
-            // Phosphor green tint over entire surface
-            using var phosphorBr = new SolidBrush(Color.FromArgb(12, 0, 60, 10));
-            g.FillRectangle(phosphorBr, 0, 0, Width, Height);
+            if (_crtEffects)
+            {
+                // Phosphor tint over entire surface
+                using var phosphorBr = new SolidBrush(_phosphorTint);
+                g.FillRectangle(phosphorBr, 0, 0, Width, Height);
 
-            // Scanlines — dark stripe every 2 px for interlace look
-            using var scanBr = new SolidBrush(Color.FromArgb(55, 0, 0, 0));
-            for (int sy = 0; sy < Height; sy += 2)
-                g.FillRectangle(scanBr, 0, sy, Width, 1);
+                // Scanlines — dark stripe every 2 px for interlace look
+                if (_scanlineAlpha > 0)
+                {
+                    using var scanBr = new SolidBrush(Color.FromArgb(_scanlineAlpha, 0, 0, 0));
+                    for (int sy = 0; sy < Height; sy += 2)
+                        g.FillRectangle(scanBr, 0, sy, Width, 1);
+                }
 
-            // Vignette — darken the four edges/corners
-            int vw = Width / 4;
-            int vh = Height / 4;
-            using var vigL = new System.Drawing.Drawing2D.LinearGradientBrush(
-                new Rectangle(0, 0, vw, Height),
-                Color.FromArgb(120, 0, 0, 0), Color.Transparent,
-                System.Drawing.Drawing2D.LinearGradientMode.Horizontal);
-            g.FillRectangle(vigL, 0, 0, vw, Height);
-            using var vigR = new System.Drawing.Drawing2D.LinearGradientBrush(
-                new Rectangle(Width - vw, 0, vw, Height),
-                Color.Transparent, Color.FromArgb(120, 0, 0, 0),
-                System.Drawing.Drawing2D.LinearGradientMode.Horizontal);
-            g.FillRectangle(vigR, Width - vw, 0, vw, Height);
-            using var vigT = new System.Drawing.Drawing2D.LinearGradientBrush(
-                new Rectangle(0, 0, Width, vh),
-                Color.FromArgb(100, 0, 0, 0), Color.Transparent,
-                System.Drawing.Drawing2D.LinearGradientMode.Vertical);
-            g.FillRectangle(vigT, 0, 0, Width, vh);
-            using var vigB = new System.Drawing.Drawing2D.LinearGradientBrush(
-                new Rectangle(0, Height - vh, Width, vh),
-                Color.Transparent, Color.FromArgb(100, 0, 0, 0),
-                System.Drawing.Drawing2D.LinearGradientMode.Vertical);
-            g.FillRectangle(vigB, 0, Height - vh, Width, vh);
+                // Vignette — darken the four edges/corners
+                if (_vignetteAlpha > 0)
+                {
+                    int vw = Width / 4;
+                    int vh = Height / 4;
+                    using var vigL = new System.Drawing.Drawing2D.LinearGradientBrush(
+                        new Rectangle(0, 0, vw, Height),
+                        Color.FromArgb(_vignetteAlpha, 0, 0, 0), Color.Transparent,
+                        System.Drawing.Drawing2D.LinearGradientMode.Horizontal);
+                    g.FillRectangle(vigL, 0, 0, vw, Height);
+                    using var vigR = new System.Drawing.Drawing2D.LinearGradientBrush(
+                        new Rectangle(Width - vw, 0, vw, Height),
+                        Color.Transparent, Color.FromArgb(_vignetteAlpha, 0, 0, 0),
+                        System.Drawing.Drawing2D.LinearGradientMode.Horizontal);
+                    g.FillRectangle(vigR, Width - vw, 0, vw, Height);
+                    int vigV = Math.Max(_vignetteAlpha - 20, 0);
+                    using var vigT = new System.Drawing.Drawing2D.LinearGradientBrush(
+                        new Rectangle(0, 0, Width, vh),
+                        Color.FromArgb(vigV, 0, 0, 0), Color.Transparent,
+                        System.Drawing.Drawing2D.LinearGradientMode.Vertical);
+                    g.FillRectangle(vigT, 0, 0, Width, vh);
+                    using var vigB = new System.Drawing.Drawing2D.LinearGradientBrush(
+                        new Rectangle(0, Height - vh, Width, vh),
+                        Color.Transparent, Color.FromArgb(vigV, 0, 0, 0),
+                        System.Drawing.Drawing2D.LinearGradientMode.Vertical);
+                    g.FillRectangle(vigB, 0, Height - vh, Width, vh);
+                }
+            }
 
             // Skip hint (bottom-right, very dim)
-            using var hintFont = new Font("Courier New", 9f);
-            using var hintBr   = new SolidBrush(Color.FromArgb(55, 0, 160, 50));
+            using var hintFont = new Font(_font.FontFamily, 9f);
+            using var hintBr   = new SolidBrush(Color.FromArgb(55, ColDefault));
             const string hint  = "Press any key to skip";
             var hsz = g.MeasureString(hint, hintFont);
             g.DrawString(hint, hintFont, hintBr, Width - hsz.Width - 16, Height - hsz.Height - 10);

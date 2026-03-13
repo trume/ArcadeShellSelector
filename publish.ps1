@@ -48,6 +48,7 @@ $ErrorActionPreference = "Stop"
 $root       = $PSScriptRoot
 $mainCsproj = Join-Path $root "ArcadeShellSelector.csproj"
 $cfgCsproj  = Join-Path $root "ArcadeShellConfigurator\ArcadeShellConfigurator.csproj"
+$srvCsproj  = Join-Path $root "ArcadeShellServer\ArcadeShellServer.csproj"
 $buildOut   = Join-Path $root "bin\Release\net10.0-windows"
 
 # --- Resolve version ---
@@ -102,6 +103,9 @@ if (-not $SkipBuild) {
         dotnet restore $cfgCsproj -r win-x64 --nologo
         if ($LASTEXITCODE -ne 0) { Write-Error "dotnet restore failed for ArcadeShellConfigurator (win-x64)." }
 
+        dotnet restore $srvCsproj -r win-x64 --nologo
+        if ($LASTEXITCODE -ne 0) { Write-Error "dotnet restore failed for ArcadeShellServer (win-x64)." }
+
         Write-Step "Publishing ArcadeShellSelector (self-contained win-x64)"
         dotnet publish $mainCsproj -c Release -r win-x64 --self-contained --no-restore -o $deployDir --nologo
         if ($LASTEXITCODE -ne 0) { Write-Error "dotnet publish failed for ArcadeShellSelector." }
@@ -109,6 +113,10 @@ if (-not $SkipBuild) {
         Write-Step "Publishing ArcadeShellConfigurator (self-contained win-x64)"
         dotnet publish $cfgCsproj -c Release -r win-x64 --self-contained --no-restore -o $deployDir --nologo
         if ($LASTEXITCODE -ne 0) { Write-Error "dotnet publish failed for ArcadeShellConfigurator." }
+
+        Write-Step "Publishing ArcadeShellServer (self-contained win-x64)"
+        dotnet publish $srvCsproj -c Release -r win-x64 --self-contained --no-restore -o $deployDir --nologo
+        if ($LASTEXITCODE -ne 0) { Write-Error "dotnet publish failed for ArcadeShellServer." }
     } else {
         Write-Step "Building solution (Release, framework-dependent)"
         dotnet build $root -c Release --nologo
@@ -117,6 +125,10 @@ if (-not $SkipBuild) {
         Write-Step "Publishing ArcadeShellConfigurator (framework-dependent)"
         dotnet publish $cfgCsproj -c Release --no-self-contained -o $deployDir --nologo
         if ($LASTEXITCODE -ne 0) { Write-Warning "dotnet publish for ArcadeShellConfigurator failed — configurator may be missing from package." }
+
+        Write-Step "Publishing ArcadeShellServer (framework-dependent)"
+        dotnet publish $srvCsproj -c Release --no-self-contained -o $deployDir --nologo
+        if ($LASTEXITCODE -ne 0) { Write-Warning "dotnet publish for ArcadeShellServer failed — server may be missing from package." }
     }
 }
 
@@ -139,6 +151,10 @@ if (-not $SelfContained) {
         "ArcadeShellConfigurator.dll",
         "ArcadeShellConfigurator.runtimeconfig.json",
         "ArcadeShellConfigurator.deps.json",
+        "ArcadeShellServer.exe",
+        "ArcadeShellServer.dll",
+        "ArcadeShellServer.runtimeconfig.json",
+        "ArcadeShellServer.deps.json",
         "config.json",
         "app.ico",
         "lib",
@@ -160,7 +176,7 @@ if (-not $SelfContained) {
             Copy-Item -Path $srcMedia -Destination $deployDir -Recurse -Force
             Write-Host "  Copied Media from source root (fallback)." -ForegroundColor DarkYellow
         } else {
-            foreach ($sub in @("Bkg", "Img", "Music")) {
+            foreach ($sub in @("Bkg", "Img", "Music", "Fonts")) {
                 New-Item -ItemType Directory -Force (Join-Path $deployMedia $sub) | Out-Null
             }
             Write-Host "  Created empty Media\{Bkg,Img,Music} folders." -ForegroundColor DarkYellow
@@ -250,6 +266,11 @@ $cleanConfig = @'
   },
   "arranque": {
     "bootSplashEnabled": true
+  },
+  "remoteAccess": {
+    "enabled": false,
+    "port": 8484,
+    "pin": "0000"
   }
 }
 '@
@@ -259,7 +280,7 @@ Write-Host "  Deployed config.json reset to first-run defaults (empty options)."
 
 # --- 7. Verify required files ---
 Write-Step "Verifying required files"
-$requiredFiles = @("ArcadeShellSelector.exe", "ArcadeShellConfigurator.exe", "config.json", "app.ico",
+$requiredFiles = @("ArcadeShellSelector.exe", "ArcadeShellConfigurator.exe", "ArcadeShellServer.exe", "config.json", "app.ico",
                    "Media\Bkg", "Media\Img", "Media\Music")
 $allOk = $true
 foreach ($f in $requiredFiles) {

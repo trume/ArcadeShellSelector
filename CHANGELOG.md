@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-03-13
+
+### Added
+- **Remote mobile server (ArcadeShellServer)** — New embedded Kestrel HTTP server lets you manage your arcade cabinet from any phone or tablet on the local network. PIN-protected, auto-starts with the launcher, serves a responsive mobile web UI via embedded resources.
+- **Mobile web UI** — Three-tab mobile dashboard (Estado → Ajustes → Lanzadores) to view system status, change settings (title, music, theme, boot splash, remote access), and manage launcher options from your phone.
+- **Theme presets** — Full color theming system with five built-in presets (Neon Green, Amber CRT, Synthwave, Ice Blue, Minimal Dark) plus custom overrides for every color in both the launcher and boot splash.
+- **Boot splash CRT effects** — Configurable scanline alpha, vignette alpha, and phosphor tint on the terminal boot animation. Exposed in the Configurator and persisted in `config.json`.
+- **Fade transition** — Smooth cross-fade between option selections with configurable duration (`ui.fadeTransition`, `ui.fadeTransitionMs`).
+- **ThemeConfig & ThemeResolver** — Centralized theme resolution with preset inheritance and per-color overrides for launcher and boot splash palettes.
+- **Remote access config** — `remoteAccess` section in config.json (enabled, port, PIN, verbose logging) with full Configurator support.
+- **Arranque per-option hints** — Inline Spanish hint labels for each startup option in the Configurator.
+- **Server-side thumbVideo preservation** — PUT handler merges `thumbVideo` and `waitForProcessName` from disk, so the mobile app can never accidentally wipe fields it doesn't display.
+
+### Fixed
+- **Server process orphan on exit** — `StopRemoteServer()` moved to the very first action in `OnFormClosed`, before VLC dispose (which can deadlock). The server child process is now reliably killed on every exit path.
+- **ThumbVideo wiped by mobile saves** — Root cause: mobile PUT sent full config with null thumbVideo. Fixed with server-side merge from existing config on disk.
+- **Config overwritten by every build** — `config.json` changed from `CopyToOutputDirectory: PreserveNewest` to `Never` with a `SeedConfigIfMissing` target that only copies when the output file is missing.
+- **UiConfig serialization casing** — Added `[JsonPropertyName]` attributes to all `UiConfig` properties to prevent PascalCase/camelCase mismatch during server roundtrips.
+- **Timer/joystick dispose safety** — All timer and DirectInput dispose calls in `OnFormClosed` wrapped in individual try-catch blocks.
+
+### Changed
+- **Configurator General tab layout** — Replaced `Dock.Top` with `FlowLayoutPanel` wrapper so `Margin` properties actually work between GroupBoxes.
+- **Mobile tab order** — Tabs reordered to Estado, Ajustes, Lanzadores (previously Estado, Opciones, Ajustes).
+- **Grid thumbnail columns** — Image column widened to 80px, Video column to 85px for better preview.
+- **Config dual-write** — Server writes config to both the runtime output directory and the project source directory so changes survive `dotnet clean`.
+- **Reload button hidden** — Bottom bar simplified to Autor + Configurar + Salir.
+
 ## [1.1.0] - 2026-03-12
 
 ### Added

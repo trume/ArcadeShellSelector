@@ -1,0 +1,3 @@
+To learn more about the font family and its license, visit https://www.fontmirror.com/lower-pixel-regular
+
+Lower Pixel Regular: A retro-inspired font, echoing the charm of 8-bit gaming.  Its blocky, pixelated characters evoke a sense of nostalgia, perfect for adding a vintage touch to logos, posters, or game-related designs.  Simple yet impactful, it delivers a clear, easily readable message with a unique, pixelated aesthetic.

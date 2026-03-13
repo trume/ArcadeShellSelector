@@ -14,7 +14,7 @@ namespace ArcadeShellSelector
         private readonly System.Windows.Forms.Timer _refreshTimer;
         private readonly float[] _levels;
 
-        private static readonly Color BarColor = Color.White;
+        private Color BarColor => ThemeResolver.Launcher.SpectrumBar;
 
         public SpectrumPanel(SpectrumAnalyzer analyzer)
         {

@@ -25,6 +25,7 @@ namespace ArcadeShellConfigurator
         private CheckBox chkTopMost = null!;
         private CheckBox chkLogging = null!;
         private CheckBox chkBootSplashEnabled = null!;
+        private CheckBox chkFadeTransition = null!;
 
         // Paths tab
         private TextBox txtToolsRoot = null!;
@@ -53,6 +54,7 @@ namespace ArcadeShellConfigurator
 
         // Options tab
         private DataGridView gridOptions = null!;
+        private int _dragRowIndex = -1;
 
         // Input tab
         private CheckBox chkXInputEnabled = null!;
@@ -125,6 +127,23 @@ namespace ArcadeShellConfigurator
 
         // Bottom panel
         private bool _suppressDirty;
+
+        // Theme tab
+        private ComboBox cboPreset = null!;
+        private ComboBox cboLauncherFont = null!;
+        private ComboBox cboBootSplashFont = null!;
+        private ComboBox cboBootSplashPreset = null!;
+        private CheckBox chkCrtEffects = null!;
+        private readonly Dictionary<string, Button> _launcherColorSwatches = new();
+        private readonly Dictionary<string, Button> _bootColorSwatches = new();
+        private Panel _previewLauncherPanel = null!;
+        private Panel _previewBootPanel = null!;
+
+        // Remote Access
+        private CheckBox chkRemoteEnabled = null!;
+        private NumericUpDown nudRemotePort = null!;
+        private TextBox txtRemotePin = null!;
+
         private StatusStrip statusStrip = null!;
         private ToolStripStatusLabel lblStatusPath = null!;
         private ToolStripStatusLabel lblStatusSave = null!;
@@ -228,9 +247,8 @@ namespace ArcadeShellConfigurator
             var grpApp = new GroupBox
             {
                 Text = "Application",
-                Dock = DockStyle.Top,
-                Height = 62,
-                Margin = new Padding(0, 0, 0, 4),
+                Height = 68,
+                Margin = new Padding(0, 0, 0, 24),
                 Padding = new Padding(12, 8, 12, 8)
             };
             var lblTitle = new Label { Text = "App Title:", Location = new Point(16, 24), AutoSize = true };
@@ -244,23 +262,38 @@ namespace ArcadeShellConfigurator
             var grpBehavior = new GroupBox
             {
                 Text = "Arranque",
-                Dock = DockStyle.Top,
-                Height = 48,
-                Margin = new Padding(0, 0, 0, 4),
+                Height = 115,
+                Margin = new Padding(0, 0, 0, 24),
                 Padding = new Padding(12, 8, 12, 8)
             };
-            chkTopMost = new CheckBox { Text = "Always on top (TopMost)", Location = new Point(16, 22), AutoSize = true };
-            var lblSep = new Label { Text = "|", Location = new Point(210, 23), AutoSize = true, ForeColor = SystemColors.GrayText };
-            chkLogging = new CheckBox { Text = "Enable logging (Depuracion)", Location = new Point(228, 22), AutoSize = true };
-            var lblSep2 = new Label { Text = "|", Location = new Point(430, 23), AutoSize = true, ForeColor = SystemColors.GrayText };
+            int rowY = 22;
+            const int rowStep = 22;
+            const int hintX = 390;
+            var hintFont = new Font(Font, FontStyle.Italic);
+            chkTopMost = new CheckBox { Text = "Always on top (TopMost)", Location = new Point(16, rowY), AutoSize = true };
+            var lblTopMostHint = new Label { Text = "— Mantiene la ventana siempre visible", Location = new Point(hintX, rowY + 2), AutoSize = true, ForeColor = SystemColors.GrayText, Font = hintFont };
+            rowY += rowStep;
+            chkLogging = new CheckBox { Text = "Enable logging (Depuraci\u00f3n)", Location = new Point(16, rowY), AutoSize = true };
+            var lblLoggingHint = new Label { Text = "— Registra actividad en debug.log", Location = new Point(hintX, rowY + 2), AutoSize = true, ForeColor = SystemColors.GrayText, Font = hintFont };
+            rowY += rowStep;
             chkBootSplashEnabled = new CheckBox
             {
                 Text = "Mostrar animaci\u00f3n de arranque (BootSplash)",
-                Location = new Point(448, 22),
+                Location = new Point(16, rowY),
                 AutoSize = true,
                 Checked = true
             };
-            grpBehavior.Controls.AddRange(new Control[] { chkTopMost, lblSep, chkLogging, lblSep2, chkBootSplashEnabled });
+            var lblBootSplashHint = new Label { Text = "— Muestra una animaci\u00f3n al iniciar la app", Location = new Point(hintX, rowY + 2), AutoSize = true, ForeColor = SystemColors.GrayText, Font = hintFont };
+            rowY += rowStep;
+            chkFadeTransition = new CheckBox
+            {
+                Text = "Fade transition al lanzar",
+                Location = new Point(16, rowY),
+                AutoSize = true,
+                Checked = true
+            };
+            var lblFadeHint = new Label { Text = "— Transici\u00f3n suave al abrir un frontend", Location = new Point(hintX, rowY + 2), AutoSize = true, ForeColor = SystemColors.GrayText, Font = hintFont };
+            grpBehavior.Controls.AddRange(new Control[] { chkTopMost, lblTopMostHint, chkLogging, lblLoggingHint, chkBootSplashEnabled, lblBootSplashHint, chkFadeTransition, lblFadeHint });
 
             // === Paths tab ===
             var tabPaths = new TabPage("Directorios") { Padding = new Padding(8) };
@@ -667,7 +700,7 @@ namespace ArcadeShellConfigurator
                 Name = "ImageThumb",
                 HeaderText = "Image",
                 ImageLayout = DataGridViewImageCellLayout.Zoom,
-                Width = 60,
+                Width = 80,
                 AutoSizeMode = DataGridViewAutoSizeColumnMode.None,
             });
             gridOptions.Columns.Add("ImagePath", "Image Path");
@@ -686,7 +719,7 @@ namespace ArcadeShellConfigurator
                 Name = "VideoThumb",
                 HeaderText = "Video",
                 ImageLayout = DataGridViewImageCellLayout.Zoom,
-                Width = 60,
+                Width = 85,
                 AutoSizeMode = DataGridViewAutoSizeColumnMode.None,
             });
             gridOptions.Columns.Add("ThumbVideoPath", "Thumb Video Path");
@@ -721,21 +754,18 @@ namespace ArcadeShellConfigurator
                 MinimumSize = new Size(0, 160),
             };
             gridOptions.Dock = DockStyle.Fill;
+
+            // Enable drag-and-drop row reordering
+            gridOptions.AllowDrop = true;
+            gridOptions.MouseDown += GridOptions_MouseDown;
+            gridOptions.MouseMove += GridOptions_MouseMove;
+            gridOptions.DragOver += GridOptions_DragOver;
+            gridOptions.DragDrop += GridOptions_DragDrop;
+
             grpOptions.Controls.Add(gridOptions);
 
             // === Onboarding image panel ===
-            var imgDir = Path.Combine(Path.GetDirectoryName(Application.ExecutablePath) ?? ".", "Media", "Img");
-            // Walk up to find the Media\Img folder (handles running from bin\Debug or bin\Release)
-            if (!Directory.Exists(imgDir))
-            {
-                var search = Path.GetDirectoryName(Application.ExecutablePath);
-                while (search != null)
-                {
-                    var candidate = Path.Combine(search, "Media", "Img");
-                    if (Directory.Exists(candidate)) { imgDir = candidate; break; }
-                    search = Path.GetDirectoryName(search);
-                }
-            }
+            var imgDir = Path.Combine(Path.GetDirectoryName(_configPath) ?? ".", "Media", "Img");
 
             var onboardingImages = new Image?[6]; // index 0..5
             for (int i = 0; i <= 5; i++)
@@ -804,11 +834,99 @@ namespace ArcadeShellConfigurator
             // Switch to Onboarding1 when the title field is focused
             txtTitle.Enter += (_, _) => ShowOnboarding(1, "Título de la aplicación");
 
-            // Add grid group FIRST so Dock.Fill works under the Top-docked groups
-            tabGeneral.Controls.Add(grpOptions);
-            tabGeneral.Controls.Add(pnlOnboarding);
-            tabGeneral.Controls.Add(grpBehavior);
-            tabGeneral.Controls.Add(grpApp);
+            // ── Remote Access group ──
+            var grpRemoteAccess = new GroupBox
+            {
+                Text = "Acceso Remoto (ArcadeShellServer)",
+                Height = 320,
+                Margin = new Padding(0, 0, 0, 24),
+                Padding = new Padding(12, 8, 12, 8)
+            };
+
+            // Left column: controls stacked vertically
+            chkRemoteEnabled = new CheckBox { Text = "Activar", Location = new Point(16, 24), AutoSize = true };
+            var chkRemoteVerbose = new CheckBox { Text = "Verbose", Location = new Point(16, 50), AutoSize = true };
+            var lblRemotePort = new Label { Text = "Puerto:", Location = new Point(16, 80), AutoSize = true };
+            nudRemotePort = new NumericUpDown { Location = new Point(70, 77), Width = 70, Minimum = 1024, Maximum = 65535, Value = 8484 };
+            var lblRemotePin = new Label { Text = "PIN:", Location = new Point(155, 80), AutoSize = true };
+            txtRemotePin = new TextBox { Location = new Point(185, 77), Width = 80, MaxLength = 8 };
+            var lblRemoteHint = new Label
+            {
+                Text = "",
+                Location = new Point(16, 110),
+                AutoSize = true,
+                ForeColor = SystemColors.GrayText,
+                Font = new Font(Font.FontFamily, 8f, FontStyle.Italic)
+            };
+
+            // Right column: mobile preview image
+            var remoteImgDir = Path.Combine(Path.GetDirectoryName(_configPath) ?? ".", "Media", "Img");
+            var imgMobileEnabled = Path.Combine(remoteImgDir, "Mobile.png");
+            var imgMobileDisabled = Path.Combine(remoteImgDir, "Mobile_disabled.png");
+            Image? mobileOnImg = File.Exists(imgMobileEnabled) ? Image.FromFile(imgMobileEnabled) : null;
+            Image? mobileOffImg = File.Exists(imgMobileDisabled) ? Image.FromFile(imgMobileDisabled) : null;
+            var picRemotePreview = new PictureBox
+            {
+                Dock = DockStyle.Right,
+                Width = 280,
+                SizeMode = PictureBoxSizeMode.Zoom,
+                BackColor = Color.Transparent,
+            };
+
+            void UpdateRemoteState()
+            {
+                bool on = chkRemoteEnabled.Checked;
+                chkRemoteVerbose.Enabled = on;
+                nudRemotePort.Enabled = on;
+                txtRemotePin.Enabled = on;
+                lblRemotePort.Enabled = on;
+                lblRemotePin.Enabled = on;
+                picRemotePreview.Image = on ? mobileOnImg : mobileOffImg;
+                if (on)
+                {
+                    var ip = GetLocalIpAddress();
+                    var port = (int)nudRemotePort.Value;
+                    lblRemoteHint.Text = $"http://{ip}:{port}";
+                    lblRemoteHint.ForeColor = SystemColors.GrayText;
+                }
+                else
+                {
+                    lblRemoteHint.Text = "Desactivado";
+                    lblRemoteHint.ForeColor = SystemColors.GrayText;
+                }
+            }
+            chkRemoteEnabled.CheckedChanged += (_, _) => UpdateRemoteState();
+            nudRemotePort.ValueChanged += (_, _) => UpdateRemoteState();
+            UpdateRemoteState();
+
+            grpRemoteAccess.Controls.AddRange(new Control[] { picRemotePreview, chkRemoteEnabled, chkRemoteVerbose, lblRemotePort, nudRemotePort, lblRemotePin, txtRemotePin, lblRemoteHint });
+
+            // Add remaining General tab controls (grid+preview moved to Lanzadores)
+            var flowGeneral = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.TopDown,
+                WrapContents = false,
+                AutoScroll = true,
+                Padding = new Padding(0)
+            };
+            // Set widths to fill parent on resize
+            flowGeneral.Layout += (_, _) =>
+            {
+                int w = flowGeneral.ClientSize.Width - (flowGeneral.VerticalScroll.Visible ? SystemInformation.VerticalScrollBarWidth : 0) - flowGeneral.Padding.Horizontal;
+                foreach (Control c in flowGeneral.Controls)
+                    c.Width = w - c.Margin.Horizontal;
+            };
+            flowGeneral.Controls.Add(grpApp);
+            flowGeneral.Controls.Add(grpBehavior);
+            flowGeneral.Controls.Add(grpRemoteAccess);
+            tabGeneral.Controls.Add(flowGeneral);
+
+            // === Lanzadores tab ===
+            var tabLanzadores = new TabPage("Lanzadores") { Padding = new Padding(8) };
+            // Add grid group FIRST so Dock.Fill works under the Top-docked preview
+            tabLanzadores.Controls.Add(grpOptions);
+            tabLanzadores.Controls.Add(pnlOnboarding);
 
             // === Input tab ===
             var tabInput = new TabPage("Controles") { Padding = new Padding(8) };
@@ -1089,7 +1207,12 @@ namespace ArcadeShellConfigurator
             tblInput.Controls.Add(grpXI, 1, 0);
             tabInput.Controls.Add(tblInput);
 
-            tabs.TabPages.AddRange(new[] { tabGeneral, tabPaths, tabMusic, tabInput });
+            tabs.TabPages.AddRange(new[] { tabGeneral, tabPaths, tabLanzadores, tabMusic, tabInput });
+
+            // === Theme tab ===
+            var tabTheme = new TabPage("Tema") { Padding = new Padding(8), AutoScroll = true };
+            BuildThemeTab(tabTheme);
+            tabs.TabPages.Add(tabTheme);
 
             // === Log tab ===
             var tabLog = new TabPage("Log") { Padding = new Padding(4) };
@@ -1276,6 +1399,10 @@ namespace ArcadeShellConfigurator
             WireField("TopMost", chkTopMost);
             WireField("Logging", chkLogging);
             WireField("BootSplashEnabled", chkBootSplashEnabled);
+            WireField("FadeTransition", chkFadeTransition);
+            WireField("RemoteEnabled", chkRemoteEnabled);
+            WireField("RemotePort", nudRemotePort);
+            WireField("RemotePin", txtRemotePin);
             WireField("ToolsRoot", txtToolsRoot);
             WireField("ImagesRoot", txtImagesRoot);
             WireField("VideoBackground", txtVideoBackground);
@@ -1290,6 +1417,8 @@ namespace ArcadeShellConfigurator
             WireField("DInputEnabled", chkDInputEnabled);
             WireField("XInputEnabled", chkXInputEnabled);
             WireField("DInputDevice", cboDInputDevice);
+            WireField("LedBlinkyEnabled", chkLedBlinkyEnabled);
+            WireField("LedBlinkyExe", txtLedBlinkyExe);
             // Button bindings are saved directly inside AssignButton — no WireField needed.
 
             // Toggle controls inside each frame based on its own enable checkbox.
@@ -1323,6 +1452,572 @@ namespace ArcadeShellConfigurator
             };
             gridOptions.RowsAdded += (s, a) => { if (!_suppressDirty) { LogConfig($"Row added (index {a.RowIndex})"); AutoSave(); } };
             gridOptions.RowsRemoved += (s, a) => { if (!_suppressDirty) { LogConfig($"Row removed (index {a.RowIndex})"); AutoSave(); } };
+        }
+
+        // ══════════════════════════════════════════════════════════════════
+        //  Theme tab builder
+        // ══════════════════════════════════════════════════════════════════
+
+        private void BuildThemeTab(TabPage tab)
+        {
+            int y = 4;
+
+            // ── Preset selector ─────────────────────────────────────────
+            var lblPreset = new Label { Text = "Preset:", Location = new Point(8, y + 3), AutoSize = true };
+            cboPreset = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(120, y), Width = 180 };
+            cboPreset.Items.AddRange(new object[] { "neon-green", "amber-crt", "synthwave", "ice-blue", "minimal-dark" });
+            cboPreset.SelectedIndexChanged += (_, _) =>
+            {
+                if (_suppressDirty) return;
+                ApplyPresetToSwatches(cboPreset.SelectedItem?.ToString() ?? "neon-green");
+                AutoSave();
+            };
+            tab.Controls.Add(lblPreset);
+            tab.Controls.Add(cboPreset);
+            y += 30;
+
+            // ── Fonts ───────────────────────────────────────────────────
+            var grpFonts = new GroupBox { Text = "Fonts", Location = new Point(8, y), Width = 780, Height = 70 };
+            var lblLF = new Label { Text = "Launcher:", Location = new Point(12, 22), AutoSize = true };
+            cboLauncherFont = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(120, 19), Width = 240 };
+            var lblBF = new Label { Text = "Boot splash:", Location = new Point(400, 22), AutoSize = true };
+            cboBootSplashFont = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(510, 19), Width = 240 };
+            PopulateFontDropdown(cboLauncherFont, "Segoe UI");
+            PopulateFontDropdown(cboBootSplashFont, "Courier New");
+            cboLauncherFont.SelectedIndexChanged += (_, _) => { if (!_suppressDirty) AutoSave(); InvalidatePreviews(); };
+            cboBootSplashFont.SelectedIndexChanged += (_, _) => { if (!_suppressDirty) AutoSave(); InvalidatePreviews(); };
+            grpFonts.Controls.AddRange(new Control[] { lblLF, cboLauncherFont, lblBF, cboBootSplashFont });
+            tab.Controls.Add(grpFonts);
+            y += 78;
+
+            // ── Launcher colors ─────────────────────────────────────────
+            var grpLauncher = new GroupBox { Text = "Launcher Colors", Location = new Point(8, y), Width = 780, Height = 120 };
+            var launcherFields = new (string key, string label)[]
+            {
+                ("selectionBorderColor", "Selection Border"),
+                ("hoverOutlineColor", "Hover Outline"),
+                ("titleColor", "Title Text"),
+                ("buttonTextColor", "Button Text"),
+                ("buttonHighlightBg", "Button HL Bg"),
+                ("buttonHighlightFg", "Button HL Fg"),
+                ("buttonBorderColor", "Button Border"),
+                ("spectrumBarColor", "Spectrum Bars"),
+                ("authorTextColor", "Author Text"),
+                ("networkStatusColor", "Network Status"),
+            };
+            int col = 0, row = 0;
+            foreach (var (key, label) in launcherFields)
+            {
+                int sx = 12 + col * 155;
+                int sy = 22 + row * 44;
+                var lbl = new Label { Text = label, Location = new Point(sx, sy), AutoSize = true, Font = new Font("Segoe UI", 8f) };
+                var btn = CreateColorSwatch(new Point(sx, sy + 16), Color.White);
+                btn.Click += (_, _) => { PickSwatchColor(btn); if (!_suppressDirty) { AutoSave(); InvalidatePreviews(); } };
+                grpLauncher.Controls.Add(lbl);
+                grpLauncher.Controls.Add(btn);
+                _launcherColorSwatches[key] = btn;
+                col++;
+                if (col >= 5) { col = 0; row++; }
+            }
+            tab.Controls.Add(grpLauncher);
+            y += 128;
+
+            // ── Boot splash ─────────────────────────────────────────────
+            var grpBoot = new GroupBox { Text = "Boot Splash", Location = new Point(8, y), Width = 780, Height = 160 };
+
+            var lblBP = new Label { Text = "Style:", Location = new Point(12, 22), AutoSize = true };
+            cboBootSplashPreset = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(80, 19), Width = 160 };
+            cboBootSplashPreset.Items.Add("(From main preset)");
+            cboBootSplashPreset.Items.AddRange(new object[] { "green-crt", "amber-crt", "blue-crt", "purple-crt", "clean-white", "matrix" });
+            cboBootSplashPreset.SelectedIndexChanged += (_, _) =>
+            {
+                if (_suppressDirty) return;
+                ApplyBootPresetToSwatches();
+                AutoSave();
+            };
+            chkCrtEffects = new CheckBox { Text = "CRT Effects (scanlines, phosphor, vignette)", Location = new Point(260, 22), AutoSize = true };
+            chkCrtEffects.CheckedChanged += (_, _) => { if (!_suppressDirty) { AutoSave(); InvalidatePreviews(); } };
+
+            grpBoot.Controls.Add(lblBP);
+            grpBoot.Controls.Add(cboBootSplashPreset);
+            grpBoot.Controls.Add(chkCrtEffects);
+
+            var bootFields = new (string key, string label)[]
+            {
+                ("bootSplashBg", "Background"),
+                ("bootSplashPrimary", "Primary"),
+                ("bootSplashDim", "Dim"),
+                ("bootSplashBright", "Bright/Cursor"),
+                ("bootSplashTag", "Tag [BOOT]"),
+                ("bootSplashInit", "Init [INIT]"),
+                ("bootSplashWarn", "Warn [WARN]"),
+            };
+            col = 0;
+            foreach (var (key, label) in bootFields)
+            {
+                int sx = 12 + col * 110;
+                int sy = 52;
+                var lbl = new Label { Text = label, Location = new Point(sx, sy), AutoSize = true, Font = new Font("Segoe UI", 8f) };
+                var btn = CreateColorSwatch(new Point(sx, sy + 16), Color.Black);
+                btn.Click += (_, _) => { PickSwatchColor(btn); if (!_suppressDirty) { AutoSave(); InvalidatePreviews(); } };
+                grpBoot.Controls.Add(lbl);
+                grpBoot.Controls.Add(btn);
+                _bootColorSwatches[key] = btn;
+                col++;
+            }
+
+            // Scanline/vignette alpha sliders
+            var lblScan = new Label { Text = "Scanline:", Location = new Point(12, 100), AutoSize = true, Font = new Font("Segoe UI", 8f) };
+            var trkScanline = new TrackBar { Minimum = 0, Maximum = 100, Location = new Point(80, 95), Width = 140, TickFrequency = 20 };
+            trkScanline.Tag = "bootSplashScanlineAlpha";
+            var lblVig = new Label { Text = "Vignette:", Location = new Point(240, 100), AutoSize = true, Font = new Font("Segoe UI", 8f) };
+            var trkVignette = new TrackBar { Minimum = 0, Maximum = 200, Location = new Point(310, 95), Width = 140, TickFrequency = 40 };
+            trkVignette.Tag = "bootSplashVignetteAlpha";
+            trkScanline.ValueChanged += (_, _) => { if (!_suppressDirty) { AutoSave(); InvalidatePreviews(); } };
+            trkVignette.ValueChanged += (_, _) => { if (!_suppressDirty) { AutoSave(); InvalidatePreviews(); } };
+            _bootColorSwatches["_trkScanline"] = new Button(); // placeholder for data storage
+            _bootColorSwatches["_trkVignette"] = new Button();
+            grpBoot.Controls.AddRange(new Control[] { lblScan, trkScanline, lblVig, trkVignette });
+            // Store trackbar refs via Tag on hidden buttons — access via grpBoot.Controls
+            grpBoot.Tag = (trkScanline, trkVignette); // retrieve in populate/collect
+
+            var btnResetBoot = new Button { Text = "Reset to Preset", Location = new Point(480, 95), Width = 120, Height = 28 };
+            btnResetBoot.Click += (_, _) =>
+            {
+                ApplyBootPresetToSwatches();
+                if (!_suppressDirty) AutoSave();
+            };
+            grpBoot.Controls.Add(btnResetBoot);
+
+            tab.Controls.Add(grpBoot);
+            y += 168;
+
+            // ── Live preview ────────────────────────────────────────────
+            var grpPreview = new GroupBox { Text = "Live Preview", Location = new Point(8, y), Width = 780, Height = 220 };
+
+            _previewLauncherPanel = new DoubleBufferedPanelCfg { Location = new Point(12, 20), Size = new Size(370, 190), BorderStyle = BorderStyle.FixedSingle };
+            _previewLauncherPanel.Paint += PreviewLauncher_Paint;
+            grpPreview.Controls.Add(_previewLauncherPanel);
+
+            _previewBootPanel = new DoubleBufferedPanelCfg { Location = new Point(395, 20), Size = new Size(370, 190), BorderStyle = BorderStyle.FixedSingle };
+            _previewBootPanel.Paint += PreviewBoot_Paint;
+            grpPreview.Controls.Add(_previewBootPanel);
+
+            tab.Controls.Add(grpPreview);
+        }
+
+        private void InvalidatePreviews()
+        {
+            _previewLauncherPanel?.Invalidate();
+            _previewBootPanel?.Invalidate();
+        }
+
+        private static Button CreateColorSwatch(Point location, Color color)
+        {
+            return new Button
+            {
+                Location = location,
+                Size = new Size(24, 24),
+                FlatStyle = FlatStyle.Flat,
+                BackColor = color,
+                Text = "",
+            };
+        }
+
+        private static void PickSwatchColor(Button btn)
+        {
+            using var dlg = new ColorDialog { Color = btn.BackColor, FullOpen = true };
+            if (dlg.ShowDialog() == DialogResult.OK)
+                btn.BackColor = dlg.Color;
+        }
+
+        private static string ColorToHex(Color c) =>
+            c.A < 255 ? $"#{c.A:X2}{c.R:X2}{c.G:X2}{c.B:X2}" : $"#{c.R:X2}{c.G:X2}{c.B:X2}";
+
+        private static Color HexToColor(string? hex, Color fallback)
+        {
+            if (string.IsNullOrWhiteSpace(hex)) return fallback;
+            try { return ColorTranslator.FromHtml(hex); }
+            catch { return fallback; }
+        }
+
+        private void PopulateFontDropdown(ComboBox cbo, string defaultFont)
+        {
+            cbo.Items.Clear();
+            foreach (var fam in FontFamily.Families)
+                cbo.Items.Add(fam.Name);
+            // Select the default or first match
+            for (int i = 0; i < cbo.Items.Count; i++)
+            {
+                if (string.Equals(cbo.Items[i] as string, defaultFont, StringComparison.OrdinalIgnoreCase))
+                {
+                    cbo.SelectedIndex = i;
+                    return;
+                }
+            }
+            if (cbo.Items.Count > 0) cbo.SelectedIndex = 0;
+        }
+
+        private void ApplyPresetToSwatches(string presetName)
+        {
+            var (launcher, boot) = ArcadeShellSelector.ThemeResolver.GetPresetPalettes(presetName);
+            // Launcher swatches
+            SetSwatch(_launcherColorSwatches, "selectionBorderColor", launcher.SelectionBorder);
+            SetSwatch(_launcherColorSwatches, "hoverOutlineColor", launcher.HoverOutline);
+            SetSwatch(_launcherColorSwatches, "titleColor", launcher.Title);
+            SetSwatch(_launcherColorSwatches, "buttonTextColor", launcher.ButtonText);
+            SetSwatch(_launcherColorSwatches, "buttonHighlightBg", launcher.ButtonHighlightBg);
+            SetSwatch(_launcherColorSwatches, "buttonHighlightFg", launcher.ButtonHighlightFg);
+            SetSwatch(_launcherColorSwatches, "buttonBorderColor", launcher.ButtonBorder);
+            SetSwatch(_launcherColorSwatches, "spectrumBarColor", launcher.SpectrumBar);
+            SetSwatch(_launcherColorSwatches, "authorTextColor", launcher.AuthorText);
+            SetSwatch(_launcherColorSwatches, "networkStatusColor", launcher.NetworkStatus);
+            // Boot swatches
+            SetSwatch(_bootColorSwatches, "bootSplashBg", boot.Bg);
+            SetSwatch(_bootColorSwatches, "bootSplashPrimary", boot.Primary);
+            SetSwatch(_bootColorSwatches, "bootSplashDim", boot.Dim);
+            SetSwatch(_bootColorSwatches, "bootSplashBright", boot.Bright);
+            SetSwatch(_bootColorSwatches, "bootSplashTag", boot.Tag);
+            SetSwatch(_bootColorSwatches, "bootSplashInit", boot.Init);
+            SetSwatch(_bootColorSwatches, "bootSplashWarn", boot.Warn);
+            chkCrtEffects.Checked = boot.CrtEffects;
+            // Reset boot preset to "From main"
+            cboBootSplashPreset.SelectedIndex = 0;
+            InvalidatePreviews();
+        }
+
+        private void ApplyBootPresetToSwatches()
+        {
+            var sel = cboBootSplashPreset.SelectedItem?.ToString();
+            ArcadeShellSelector.ThemeResolver.BootSplashPalette boot;
+            if (string.IsNullOrEmpty(sel) || sel == "(From main preset)")
+            {
+                var (_, b) = ArcadeShellSelector.ThemeResolver.GetPresetPalettes(cboPreset.SelectedItem?.ToString() ?? "neon-green");
+                boot = b;
+            }
+            else
+            {
+                // Get boot palette by name — use neon-green launcher + override boot
+                var (_, b) = ArcadeShellSelector.ThemeResolver.GetPresetPalettes("neon-green");
+                boot = b; // fallback
+                // Try to get a dedicated boot preset via a temporary ThemeConfig
+                var tempCfg = new ArcadeShellSelector.AppConfig();
+                tempCfg.Theme.BootSplashPreset = sel;
+                tempCfg.Theme.Preset = cboPreset.SelectedItem?.ToString() ?? "neon-green";
+                ArcadeShellSelector.ThemeResolver.Init(tempCfg);
+                boot = ArcadeShellSelector.ThemeResolver.Boot;
+            }
+            SetSwatch(_bootColorSwatches, "bootSplashBg", boot.Bg);
+            SetSwatch(_bootColorSwatches, "bootSplashPrimary", boot.Primary);
+            SetSwatch(_bootColorSwatches, "bootSplashDim", boot.Dim);
+            SetSwatch(_bootColorSwatches, "bootSplashBright", boot.Bright);
+            SetSwatch(_bootColorSwatches, "bootSplashTag", boot.Tag);
+            SetSwatch(_bootColorSwatches, "bootSplashInit", boot.Init);
+            SetSwatch(_bootColorSwatches, "bootSplashWarn", boot.Warn);
+            chkCrtEffects.Checked = boot.CrtEffects;
+            InvalidatePreviews();
+        }
+
+        private static void SetSwatch(Dictionary<string, Button> swatches, string key, Color color)
+        {
+            if (swatches.TryGetValue(key, out var btn))
+                btn.BackColor = color;
+        }
+
+        // ── Preview painting ────────────────────────────────────────────
+
+        private void PreviewLauncher_Paint(object? sender, PaintEventArgs e)
+        {
+            var g = e.Graphics;
+            var w = _previewLauncherPanel.Width;
+            var h = _previewLauncherPanel.Height;
+            g.Clear(Color.FromArgb(30, 30, 30));
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+
+            var fontName = cboLauncherFont.SelectedItem?.ToString() ?? "Segoe UI";
+
+            // Title
+            var titleColor = GetSwatchColor(_launcherColorSwatches, "titleColor", Color.White);
+            using var titleFont = new Font(fontName, 11f, FontStyle.Bold);
+            var titleText = _config.Ui.Title;
+            var tsz = g.MeasureString(titleText, titleFont);
+            g.DrawString(titleText, titleFont, new SolidBrush(titleColor), (w - tsz.Width) / 2, 8);
+
+            // Option rectangles
+            var selBorder = GetSwatchColor(_launcherColorSwatches, "selectionBorderColor", Color.CornflowerBlue);
+            var hoverOutline = GetSwatchColor(_launcherColorSwatches, "hoverOutlineColor", Color.Gray);
+            int boxW = 60, boxH = 70, gap = 16;
+            int totalW = 3 * boxW + 2 * gap;
+            int startX = (w - totalW) / 2;
+            int boxY = 36;
+            for (int i = 0; i < 3; i++)
+            {
+                var bx = startX + i * (boxW + gap);
+                g.FillRectangle(Brushes.DimGray, bx, boxY, boxW, boxH);
+                if (i == 1)
+                {
+                    using var selPen = new Pen(selBorder, 3);
+                    g.DrawRectangle(selPen, bx, boxY, boxW, boxH);
+                }
+                else if (i == 2)
+                {
+                    using var hovPen = new Pen(hoverOutline, 1);
+                    g.DrawRectangle(hovPen, bx, boxY, boxW, boxH);
+                }
+            }
+
+            // Spectrum bars
+            var barColor = GetSwatchColor(_launcherColorSwatches, "spectrumBarColor", Color.White);
+            using var barBrush = new SolidBrush(barColor);
+            int barW = 6, barGap = 3, barCount = 6;
+            int barStartX = (w - (barCount * (barW + barGap))) / 2;
+            var rng = new Random(42); // deterministic for preview
+            for (int i = 0; i < barCount; i++)
+            {
+                int barH = 8 + rng.Next(20);
+                g.FillRectangle(barBrush, barStartX + i * (barW + barGap), h - 50 - barH, barW, barH);
+            }
+
+            // Buttons
+            var btnTextColor = GetSwatchColor(_launcherColorSwatches, "buttonTextColor", Color.White);
+            var btnBorder = GetSwatchColor(_launcherColorSwatches, "buttonBorderColor", Color.Gray);
+            var btnHlBg = GetSwatchColor(_launcherColorSwatches, "buttonHighlightBg", Color.White);
+            var btnHlFg = GetSwatchColor(_launcherColorSwatches, "buttonHighlightFg", Color.Black);
+            using var btnFont = new Font(fontName, 7f);
+            using var btnPen = new Pen(btnBorder);
+            // Normal button
+            g.DrawRectangle(btnPen, 60, h - 30, 80, 18);
+            g.DrawString("Config", btnFont, new SolidBrush(btnTextColor), 72, h - 28);
+            // Highlighted button
+            g.FillRectangle(new SolidBrush(btnHlBg), 160, h - 30, 80, 18);
+            g.DrawString("Salir", btnFont, new SolidBrush(btnHlFg), 180, h - 28);
+
+            // Author text
+            var authorColor = GetSwatchColor(_launcherColorSwatches, "authorTextColor", Color.Gray);
+            using var authorFont = new Font(fontName, 6f);
+            g.DrawString(_config.Autor.Quien, authorFont, new SolidBrush(authorColor), 260, h - 22);
+        }
+
+        private void PreviewBoot_Paint(object? sender, PaintEventArgs e)
+        {
+            var g = e.Graphics;
+            var w = _previewBootPanel.Width;
+            var h = _previewBootPanel.Height;
+
+            var bgColor = GetSwatchColor(_bootColorSwatches, "bootSplashBg", Color.Black);
+            g.Clear(bgColor);
+            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+
+            var fontName = cboBootSplashFont.SelectedItem?.ToString() ?? "Courier New";
+            using var font = new Font(fontName, 10f);
+            float lineH = font.GetHeight(g) + 2f;
+            float x = 10f, y = 8f;
+
+            var primary = GetSwatchColor(_bootColorSwatches, "bootSplashPrimary", Color.Green);
+            var dim = GetSwatchColor(_bootColorSwatches, "bootSplashDim", Color.DarkGreen);
+            var bright = GetSwatchColor(_bootColorSwatches, "bootSplashBright", Color.LightGreen);
+            var tag = GetSwatchColor(_bootColorSwatches, "bootSplashTag", Color.Cyan);
+            var init = GetSwatchColor(_bootColorSwatches, "bootSplashInit", Color.Yellow);
+            var warn = GetSwatchColor(_bootColorSwatches, "bootSplashWarn", Color.Orange);
+
+            var lines = new (string text, Color color)[]
+            {
+                ("── ArcadeShell Boot ──────────", dim),
+                ("[BOOT] ArcadeShell v2.0", tag),
+                ("[INIT] Loading configuration...", init),
+                ("[OK  ] Config loaded", primary),
+                ("[OK  ] Frontends: 4 options", primary),
+                ("[INIT] Scanning input devices...", init),
+                ("[OK  ] XInput: enabled", primary),
+                ("[WARN] LEDBlinky not configured", warn),
+                ("[OK  ] READY — LAUNCHING...", bright),
+            };
+
+            foreach (var (text, color) in lines)
+            {
+                using var br = new SolidBrush(color);
+                g.DrawString(text, font, br, x, y);
+                y += lineH;
+                if (y > h - 30) break;
+            }
+
+            // Cursor block
+            using var cursorBr = new SolidBrush(bright);
+            g.FillRectangle(cursorBr, x, y, 7, lineH - 2);
+
+            // CRT effects
+            if (chkCrtEffects.Checked)
+            {
+                // Scanlines
+                var grpB = _previewBootPanel.Parent as GroupBox;
+                int scanAlpha = 55;
+                int vigAlpha = 120;
+                if (grpB?.Tag is (TrackBar ts, TrackBar tv))
+                {
+                    scanAlpha = ts.Value;
+                    vigAlpha = tv.Value;
+                }
+
+                if (scanAlpha > 0)
+                {
+                    using var scanBr = new SolidBrush(Color.FromArgb(Math.Min(scanAlpha, 255), 0, 0, 0));
+                    for (int sy = 0; sy < h; sy += 2)
+                        g.FillRectangle(scanBr, 0, sy, w, 1);
+                }
+                if (vigAlpha > 0)
+                {
+                    int vw2 = w / 4;
+                    using var vigL = new System.Drawing.Drawing2D.LinearGradientBrush(
+                        new Rectangle(0, 0, vw2, h),
+                        Color.FromArgb(Math.Min(vigAlpha, 255), 0, 0, 0), Color.Transparent,
+                        System.Drawing.Drawing2D.LinearGradientMode.Horizontal);
+                    g.FillRectangle(vigL, 0, 0, vw2, h);
+                    using var vigR = new System.Drawing.Drawing2D.LinearGradientBrush(
+                        new Rectangle(w - vw2, 0, vw2, h),
+                        Color.Transparent, Color.FromArgb(Math.Min(vigAlpha, 255), 0, 0, 0),
+                        System.Drawing.Drawing2D.LinearGradientMode.Horizontal);
+                    g.FillRectangle(vigR, w - vw2, 0, vw2, h);
+                }
+            }
+        }
+
+        private static Color GetSwatchColor(Dictionary<string, Button> swatches, string key, Color fallback) =>
+            swatches.TryGetValue(key, out var btn) ? btn.BackColor : fallback;
+
+        private void PopulateThemeUI()
+        {
+            var t = _config.Theme;
+
+            // Preset dropdown
+            var presetName = (t.Preset ?? "neon-green").ToLowerInvariant();
+            for (int i = 0; i < cboPreset.Items.Count; i++)
+            {
+                if (string.Equals(cboPreset.Items[i] as string, presetName, StringComparison.OrdinalIgnoreCase))
+                { cboPreset.SelectedIndex = i; break; }
+            }
+            if (cboPreset.SelectedIndex < 0) cboPreset.SelectedIndex = 0;
+
+            // Fonts
+            SelectFontInDropdown(cboLauncherFont, t.LauncherFont, "Segoe UI");
+            SelectFontInDropdown(cboBootSplashFont, t.BootSplashFont, "Courier New");
+
+            // Initialize ThemeResolver so GetPresetPalettes works correctly
+            ArcadeShellSelector.ThemeResolver.Init(_config);
+
+            // Set launcher color swatches from resolved config (override > preset)
+            var (lp, bp) = ArcadeShellSelector.ThemeResolver.GetPresetPalettes(presetName);
+            SetSwatch(_launcherColorSwatches, "selectionBorderColor", HexToColor(t.SelectionBorderColor, lp.SelectionBorder));
+            SetSwatch(_launcherColorSwatches, "hoverOutlineColor", HexToColor(t.HoverOutlineColor, lp.HoverOutline));
+            SetSwatch(_launcherColorSwatches, "titleColor", HexToColor(t.TitleColor, lp.Title));
+            SetSwatch(_launcherColorSwatches, "buttonTextColor", HexToColor(t.ButtonTextColor, lp.ButtonText));
+            SetSwatch(_launcherColorSwatches, "buttonHighlightBg", HexToColor(t.ButtonHighlightBg, lp.ButtonHighlightBg));
+            SetSwatch(_launcherColorSwatches, "buttonHighlightFg", HexToColor(t.ButtonHighlightFg, lp.ButtonHighlightFg));
+            SetSwatch(_launcherColorSwatches, "buttonBorderColor", HexToColor(t.ButtonBorderColor, lp.ButtonBorder));
+            SetSwatch(_launcherColorSwatches, "spectrumBarColor", HexToColor(t.SpectrumBarColor, lp.SpectrumBar));
+            SetSwatch(_launcherColorSwatches, "authorTextColor", HexToColor(t.AuthorTextColor, lp.AuthorText));
+            SetSwatch(_launcherColorSwatches, "networkStatusColor", HexToColor(t.NetworkStatusColor, lp.NetworkStatus));
+
+            // Boot splash preset
+            var bpName = t.BootSplashPreset ?? "";
+            cboBootSplashPreset.SelectedIndex = 0; // "(From main preset)"
+            for (int i = 1; i < cboBootSplashPreset.Items.Count; i++)
+            {
+                if (string.Equals(cboBootSplashPreset.Items[i] as string, bpName, StringComparison.OrdinalIgnoreCase))
+                { cboBootSplashPreset.SelectedIndex = i; break; }
+            }
+
+            // Boot splash colors
+            var resolvedBoot = ArcadeShellSelector.ThemeResolver.Boot;
+            SetSwatch(_bootColorSwatches, "bootSplashBg", HexToColor(t.BootSplashBg, resolvedBoot.Bg));
+            SetSwatch(_bootColorSwatches, "bootSplashPrimary", HexToColor(t.BootSplashPrimary, resolvedBoot.Primary));
+            SetSwatch(_bootColorSwatches, "bootSplashDim", HexToColor(t.BootSplashDim, resolvedBoot.Dim));
+            SetSwatch(_bootColorSwatches, "bootSplashBright", HexToColor(t.BootSplashBright, resolvedBoot.Bright));
+            SetSwatch(_bootColorSwatches, "bootSplashTag", HexToColor(t.BootSplashTag, resolvedBoot.Tag));
+            SetSwatch(_bootColorSwatches, "bootSplashInit", HexToColor(t.BootSplashInit, resolvedBoot.Init));
+            SetSwatch(_bootColorSwatches, "bootSplashWarn", HexToColor(t.BootSplashWarn, resolvedBoot.Warn));
+
+            chkCrtEffects.Checked = t.BootSplashCrtEffects;
+
+            // Trackbars — find them in the GroupBox Tag
+            if (_previewBootPanel?.Parent is GroupBox grpB && grpB.Tag is (TrackBar trkScan, TrackBar trkVig))
+            {
+                trkScan.Value = Math.Clamp(t.BootSplashScanlineAlpha ?? resolvedBoot.ScanlineAlpha, 0, 100);
+                trkVig.Value = Math.Clamp(t.BootSplashVignetteAlpha ?? resolvedBoot.VignetteAlpha, 0, 200);
+            }
+
+            InvalidatePreviews();
+        }
+
+        private void CollectThemeFromUI()
+        {
+            var t = _config.Theme;
+            t.Preset = cboPreset.SelectedItem?.ToString() ?? "neon-green";
+            t.LauncherFont = cboLauncherFont.SelectedItem?.ToString();
+            t.BootSplashFont = cboBootSplashFont.SelectedItem?.ToString();
+
+            // Only store font if it differs from default
+            if (t.LauncherFont == "Segoe UI") t.LauncherFont = null;
+            if (t.BootSplashFont == "Courier New") t.BootSplashFont = null;
+
+            // Launcher colors — store all as hex
+            t.SelectionBorderColor = ColorToHex(GetSwatchColor(_launcherColorSwatches, "selectionBorderColor", Color.CornflowerBlue));
+            t.HoverOutlineColor    = ColorToHex(GetSwatchColor(_launcherColorSwatches, "hoverOutlineColor", Color.Gray));
+            t.TitleColor           = ColorToHex(GetSwatchColor(_launcherColorSwatches, "titleColor", Color.White));
+            t.ButtonTextColor      = ColorToHex(GetSwatchColor(_launcherColorSwatches, "buttonTextColor", Color.White));
+            t.ButtonHighlightBg    = ColorToHex(GetSwatchColor(_launcherColorSwatches, "buttonHighlightBg", Color.White));
+            t.ButtonHighlightFg    = ColorToHex(GetSwatchColor(_launcherColorSwatches, "buttonHighlightFg", Color.Black));
+            t.ButtonBorderColor    = ColorToHex(GetSwatchColor(_launcherColorSwatches, "buttonBorderColor", Color.Gray));
+            t.SpectrumBarColor     = ColorToHex(GetSwatchColor(_launcherColorSwatches, "spectrumBarColor", Color.White));
+            t.AuthorTextColor      = ColorToHex(GetSwatchColor(_launcherColorSwatches, "authorTextColor", Color.Gray));
+            t.NetworkStatusColor   = ColorToHex(GetSwatchColor(_launcherColorSwatches, "networkStatusColor", Color.Green));
+
+            // Boot splash preset
+            var bpSel = cboBootSplashPreset.SelectedItem?.ToString();
+            t.BootSplashPreset = (bpSel == "(From main preset)") ? null : bpSel;
+
+            // Boot splash colors
+            t.BootSplashBg      = ColorToHex(GetSwatchColor(_bootColorSwatches, "bootSplashBg", Color.Black));
+            t.BootSplashPrimary = ColorToHex(GetSwatchColor(_bootColorSwatches, "bootSplashPrimary", Color.Green));
+            t.BootSplashDim     = ColorToHex(GetSwatchColor(_bootColorSwatches, "bootSplashDim", Color.DarkGreen));
+            t.BootSplashBright  = ColorToHex(GetSwatchColor(_bootColorSwatches, "bootSplashBright", Color.LightGreen));
+            t.BootSplashTag     = ColorToHex(GetSwatchColor(_bootColorSwatches, "bootSplashTag", Color.Cyan));
+            t.BootSplashInit    = ColorToHex(GetSwatchColor(_bootColorSwatches, "bootSplashInit", Color.Yellow));
+            t.BootSplashWarn    = ColorToHex(GetSwatchColor(_bootColorSwatches, "bootSplashWarn", Color.Orange));
+
+            t.BootSplashCrtEffects = chkCrtEffects.Checked;
+
+            // Trackbar values
+            if (_previewBootPanel?.Parent is GroupBox grpB && grpB.Tag is (TrackBar trkScan, TrackBar trkVig))
+            {
+                t.BootSplashScanlineAlpha = trkScan.Value;
+                t.BootSplashVignetteAlpha = trkVig.Value;
+            }
+        }
+
+        private void SelectFontInDropdown(ComboBox cbo, string? fontName, string defaultFont)
+        {
+            var target = string.IsNullOrWhiteSpace(fontName) ? defaultFont : fontName;
+            for (int i = 0; i < cbo.Items.Count; i++)
+            {
+                if (string.Equals(cbo.Items[i] as string, target, StringComparison.OrdinalIgnoreCase))
+                { cbo.SelectedIndex = i; return; }
+            }
+            // Fallback to default
+            for (int i = 0; i < cbo.Items.Count; i++)
+            {
+                if (string.Equals(cbo.Items[i] as string, defaultFont, StringComparison.OrdinalIgnoreCase))
+                { cbo.SelectedIndex = i; return; }
+            }
+        }
+
+        /// <summary>Double-buffered panel for flicker-free preview rendering.</summary>
+        private sealed class DoubleBufferedPanelCfg : Panel
+        {
+            public DoubleBufferedPanelCfg()
+            {
+                SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint, true);
+                UpdateStyles();
+            }
         }
 
         private void PopulateAudioDevices()
@@ -1666,6 +2361,14 @@ namespace ArcadeShellConfigurator
             chkTopMost.Checked = _config.Ui.TopMost;
             chkLogging.Checked = _config.Activa.Activa;
             chkBootSplashEnabled.Checked = _config.Arranque.BootSplashEnabled;
+            chkFadeTransition.Checked = _config.Ui.FadeTransition;
+
+            // Remote Access
+            chkRemoteEnabled.Checked = _config.RemoteAccess.Enabled;
+            nudRemotePort.Value = Math.Clamp(_config.RemoteAccess.Port, 1024, 65535);
+            txtRemotePin.Text = _config.RemoteAccess.Pin;
+            if (chkRemoteEnabled.Parent?.Controls.OfType<CheckBox>().FirstOrDefault(c => c.Text == "Verbose") is CheckBox chkV)
+                chkV.Checked = _config.RemoteAccess.Verbose;
 
             // Paths
             txtToolsRoot.Text = _config.Paths.ToolsRoot;
@@ -1741,6 +2444,9 @@ namespace ArcadeShellConfigurator
             txtLedBlinkyExe.Text = _config.LedBlinky.ExePath;
             txtLedBlinkyExe.Enabled = chkLedBlinkyEnabled.Checked;
 
+            // Theme
+            PopulateThemeUI();
+
             // Load saved button bindings into stored fields, then refresh binding display labels
             _bindSelectBtn = Math.Max(1, _config.Input.DInputButtonSelect);
             _bindBackBtn   = Math.Max(1, _config.Input.DInputButtonBack);
@@ -1787,12 +2493,40 @@ namespace ArcadeShellConfigurator
             }
         }
 
+        private static string GetLocalIpAddress()
+        {
+            try
+            {
+                foreach (var ni in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+                {
+                    if (ni.OperationalStatus != System.Net.NetworkInformation.OperationalStatus.Up) continue;
+                    if (ni.NetworkInterfaceType is System.Net.NetworkInformation.NetworkInterfaceType.Loopback
+                        or System.Net.NetworkInformation.NetworkInterfaceType.Tunnel) continue;
+                    foreach (var addr in ni.GetIPProperties().UnicastAddresses)
+                    {
+                        if (addr.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                            return addr.Address.ToString();
+                    }
+                }
+            }
+            catch { }
+            return "127.0.0.1";
+        }
+
         private void CollectFromUI()
         {
             _config.Ui.Title = txtTitle.Text;
             _config.Ui.TopMost = chkTopMost.Checked;
             _config.Activa.Activa = chkLogging.Checked;
             _config.Arranque.BootSplashEnabled = chkBootSplashEnabled.Checked;
+            _config.Ui.FadeTransition = chkFadeTransition.Checked;
+
+            // Remote Access
+            _config.RemoteAccess.Enabled = chkRemoteEnabled.Checked;
+            _config.RemoteAccess.Port = (int)nudRemotePort.Value;
+            _config.RemoteAccess.Pin = txtRemotePin.Text;
+            if (chkRemoteEnabled.Parent?.Controls.OfType<CheckBox>().FirstOrDefault(c => c.Text == "Verbose") is CheckBox chkVb)
+                _config.RemoteAccess.Verbose = chkVb.Checked;
 
             _config.Paths.ToolsRoot = txtToolsRoot.Text;
             _config.Paths.ImagesRoot = txtImagesRoot.Text;
@@ -1832,6 +2566,8 @@ namespace ArcadeShellConfigurator
             _config.LedBlinky.Enabled = chkLedBlinkyEnabled.Checked;
             _config.LedBlinky.ExePath = txtLedBlinkyExe.Text;
 
+            CollectThemeFromUI();
+
             _config.Options.Clear();
             foreach (DataGridViewRow row in gridOptions.Rows)
             {
@@ -1856,7 +2592,7 @@ namespace ArcadeShellConfigurator
             if (string.IsNullOrEmpty(_logFilePath)) return;
             try
             {
-                var line = $"[{DateTime.Now:HH:mm:ss.fff}] [CONFIG] {message}{Environment.NewLine}";
+                var line = $"[{DateTime.Now:HH:mm:ss.fff}] [INF] [CONFIG] {message}{Environment.NewLine}";
                 File.AppendAllText(_logFilePath, line);
             }
             catch { }
@@ -2166,6 +2902,92 @@ namespace ArcadeShellConfigurator
                 row.Cells["ThumbVideoPath"].Value = destLocal;
                 row.Cells["VideoThumb"].Value = LoadVideoThumbnail(destLocal);
             }
+        }
+
+        private void MoveGridRow(int direction)
+        {
+            if (gridOptions.CurrentRow == null || gridOptions.CurrentRow.IsNewRow) return;
+            int idx = gridOptions.CurrentRow.Index;
+            int target = idx + direction;
+
+            // Count only data rows (exclude the "new row" placeholder)
+            int dataRowCount = gridOptions.Rows.Count - (gridOptions.AllowUserToAddRows ? 1 : 0);
+            if (target < 0 || target >= dataRowCount) return;
+
+            _suppressDirty = true;
+
+            // Swap cell values between idx and target
+            var srcRow = gridOptions.Rows[idx];
+            var dstRow = gridOptions.Rows[target];
+            foreach (DataGridViewColumn col in gridOptions.Columns)
+            {
+                var tmp = srcRow.Cells[col.Index].Value;
+                srcRow.Cells[col.Index].Value = dstRow.Cells[col.Index].Value;
+                dstRow.Cells[col.Index].Value = tmp;
+            }
+
+            // Move selection to follow the moved row
+            gridOptions.ClearSelection();
+            gridOptions.CurrentCell = gridOptions.Rows[target].Cells[0];
+            gridOptions.Rows[target].Selected = true;
+
+            _suppressDirty = false;
+
+            LogConfig($"Row moved: {idx} → {target}");
+            AutoSave();
+        }
+
+        private void GridOptions_MouseDown(object? sender, MouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Left) return;
+            var hit = gridOptions.HitTest(e.X, e.Y);
+            if (hit.RowIndex >= 0 && !gridOptions.Rows[hit.RowIndex].IsNewRow)
+                _dragRowIndex = hit.RowIndex;
+            else
+                _dragRowIndex = -1;
+        }
+
+        private void GridOptions_MouseMove(object? sender, MouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Left || _dragRowIndex < 0) return;
+
+            // Only start drag after moving a minimum distance to avoid accidental drags
+            if (Math.Abs(e.Y - gridOptions.GetRowDisplayRectangle(_dragRowIndex, false).Top - gridOptions.RowTemplate.Height / 2) > 8)
+            {
+                gridOptions.DoDragDrop(_dragRowIndex, DragDropEffects.Move);
+            }
+        }
+
+        private void GridOptions_DragOver(object? sender, DragEventArgs e)
+        {
+            e.Effect = DragDropEffects.Move;
+        }
+
+        private void GridOptions_DragDrop(object? sender, DragEventArgs e)
+        {
+            if (_dragRowIndex < 0) return;
+            var clientPoint = gridOptions.PointToClient(new Point(e.X, e.Y));
+            var hit = gridOptions.HitTest(clientPoint.X, clientPoint.Y);
+            int targetIndex = hit.RowIndex;
+
+            if (targetIndex < 0 || targetIndex == _dragRowIndex) { _dragRowIndex = -1; return; }
+
+            int dataRowCount = gridOptions.Rows.Count - (gridOptions.AllowUserToAddRows ? 1 : 0);
+            if (targetIndex >= dataRowCount) { _dragRowIndex = -1; return; }
+
+            // Move one step at a time from source to target
+            int dir = targetIndex > _dragRowIndex ? 1 : -1;
+            int current = _dragRowIndex;
+            while (current != targetIndex)
+            {
+                // Select the source row so MoveGridRow knows which row to move
+                gridOptions.ClearSelection();
+                gridOptions.CurrentCell = gridOptions.Rows[current].Cells[0];
+                MoveGridRow(dir);
+                current += dir;
+            }
+
+            _dragRowIndex = -1;
         }
 
         private Image GetNoMediaThumb(int w, int h)

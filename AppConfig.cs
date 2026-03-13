@@ -37,6 +37,12 @@ namespace ArcadeShellSelector
         [JsonPropertyName("arranque")]
         public StartupConfig Arranque { get; set; } = new();
 
+        [JsonPropertyName("theme")]
+        public ThemeConfig Theme { get; set; } = new();
+
+        [JsonPropertyName("remoteAccess")]
+        public RemoteAccessConfig RemoteAccess { get; set; } = new();
+
         public static (AppConfig? cfg, string? err) TryLoadFromFile(string path)
         {
             try
@@ -87,14 +93,29 @@ namespace ArcadeShellSelector
 
     public sealed class UiConfig
     {
+        [JsonPropertyName("title")]
         public string Title { get; set; } = "Select your environment";
+
+        [JsonPropertyName("topMost")]
         public bool TopMost { get; set; } = true;
+
+        [JsonPropertyName("minImageSizePx")]
         public int MinImageSizePx { get; set; } = 180;
+
+        [JsonPropertyName("imageHeightRatio")]
         public double ImageHeightRatio { get; set; } = 0.42;
+
+        [JsonPropertyName("imageWidthRatioPerOption")]
         public double ImageWidthRatioPerOption { get; set; } = 0.26;
 
         [JsonPropertyName("spectrumBands")]
         public int SpectrumBands { get; set; } = 6;
+
+        [JsonPropertyName("fadeTransition")]
+        public bool FadeTransition { get; set; } = true;
+
+        [JsonPropertyName("fadeTransitionMs")]
+        public int FadeTransitionMs { get; set; } = 400;
     }
 
     public sealed class PathConfig
@@ -261,6 +282,106 @@ namespace ArcadeShellSelector
         /// </summary>
         [JsonPropertyName("bootSplashEnabled")]
         public bool BootSplashEnabled { get; set; } = true;
+    }
+
+    public sealed class ThemeConfig
+    {
+        /// <summary>Named preset: neon-green, amber-crt, synthwave, ice-blue, minimal-dark, custom.</summary>
+        [JsonPropertyName("preset")]
+        public string Preset { get; set; } = "neon-green";
+
+        // ── Fonts ───────────────────────────────────────────────────────
+        /// <summary>Font family for launcher UI (title, buttons, labels). Empty = Segoe UI.</summary>
+        [JsonPropertyName("launcherFont")]
+        public string? LauncherFont { get; set; }
+
+        /// <summary>Font family for boot splash terminal text. Empty = Courier New.</summary>
+        [JsonPropertyName("bootSplashFont")]
+        public string? BootSplashFont { get; set; }
+
+        // ── Launcher colors (hex "#RRGGBB" or "#AARRGGBB", empty = from preset) ──
+        [JsonPropertyName("selectionBorderColor")]
+        public string? SelectionBorderColor { get; set; }
+
+        [JsonPropertyName("hoverOutlineColor")]
+        public string? HoverOutlineColor { get; set; }
+
+        [JsonPropertyName("titleColor")]
+        public string? TitleColor { get; set; }
+
+        [JsonPropertyName("buttonTextColor")]
+        public string? ButtonTextColor { get; set; }
+
+        [JsonPropertyName("buttonHighlightBg")]
+        public string? ButtonHighlightBg { get; set; }
+
+        [JsonPropertyName("buttonHighlightFg")]
+        public string? ButtonHighlightFg { get; set; }
+
+        [JsonPropertyName("buttonBorderColor")]
+        public string? ButtonBorderColor { get; set; }
+
+        [JsonPropertyName("spectrumBarColor")]
+        public string? SpectrumBarColor { get; set; }
+
+        [JsonPropertyName("authorTextColor")]
+        public string? AuthorTextColor { get; set; }
+
+        [JsonPropertyName("networkStatusColor")]
+        public string? NetworkStatusColor { get; set; }
+
+        // ── Boot splash colors ──────────────────────────────────────────
+        /// <summary>Boot splash sub-preset. Empty = inherits from main preset.</summary>
+        [JsonPropertyName("bootSplashPreset")]
+        public string? BootSplashPreset { get; set; }
+
+        [JsonPropertyName("bootSplashBg")]
+        public string? BootSplashBg { get; set; }
+
+        [JsonPropertyName("bootSplashPrimary")]
+        public string? BootSplashPrimary { get; set; }
+
+        [JsonPropertyName("bootSplashDim")]
+        public string? BootSplashDim { get; set; }
+
+        [JsonPropertyName("bootSplashBright")]
+        public string? BootSplashBright { get; set; }
+
+        [JsonPropertyName("bootSplashTag")]
+        public string? BootSplashTag { get; set; }
+
+        [JsonPropertyName("bootSplashInit")]
+        public string? BootSplashInit { get; set; }
+
+        [JsonPropertyName("bootSplashWarn")]
+        public string? BootSplashWarn { get; set; }
+
+        [JsonPropertyName("bootSplashPhosphorTint")]
+        public string? BootSplashPhosphorTint { get; set; }
+
+        [JsonPropertyName("bootSplashScanlineAlpha")]
+        public int? BootSplashScanlineAlpha { get; set; }
+
+        [JsonPropertyName("bootSplashVignetteAlpha")]
+        public int? BootSplashVignetteAlpha { get; set; }
+
+        [JsonPropertyName("bootSplashCrtEffects")]
+        public bool BootSplashCrtEffects { get; set; } = true;
+    }
+
+    public sealed class RemoteAccessConfig
+    {
+        [JsonPropertyName("enabled")]
+        public bool Enabled { get; set; } = false;
+
+        [JsonPropertyName("port")]
+        public int Port { get; set; } = 8484;
+
+        [JsonPropertyName("pin")]
+        public string Pin { get; set; } = "0000";
+
+        [JsonPropertyName("verbose")]
+        public bool Verbose { get; set; } = false;
     }
 }
 

@@ -1,11 +1,13 @@
-{
+﻿{
   "ui": {
-    "Title": "\u00BFA qu\u00E9 jugamos hoy?",
-    "TopMost": true,
-    "MinImageSizePx": 180,
-    "ImageHeightRatio": 0.32,
-    "ImageWidthRatioPerOption": 0.4,
-    "spectrumBands": 16
+    "title": "\u00BFA qu\u00E9 jugamos hoy?",
+    "topMost": true,
+    "minImageSizePx": 180,
+    "imageHeightRatio": 0.32,
+    "imageWidthRatioPerOption": 0.4,
+    "spectrumBands": 6,
+    "fadeTransition": true,
+    "fadeTransitionMs": 600
   },
   "paths": {
     "toolsRoot": "C:\\",
@@ -16,38 +18,50 @@
   },
   "options": [
     {
+      "label": "CoinOpsew33",
+      "exe": "D:\\Emu\\CoinOPS Next\\CoinOPS.exe",
+      "image": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Img\\MAME.png",
+      "thumbVideo": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Video\\bloodwar.avi",
+      "waitForProcessName": null
+    },
+    {
       "label": "CoinOps",
       "exe": "D:\\Emu\\CoinOPS Next\\CoinOPS.exe",
       "image": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Img\\CoinOPS Next.jpg",
-      "thumbVideo": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Video\\2 On 2 Open Ice Challenge-01.mp4"
+      "thumbVideo": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Video\\2 On 2 Open Ice Challenge-01.mp4",
+      "waitForProcessName": null
     },
     {
       "label": "CoinOps",
       "exe": "D:\\Emu\\CoinOPS Next\\CoinOPS.exe",
       "image": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Img\\CoinOPS Helper.jpg",
-      "thumbVideo": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Video\\1000 Miglia_ Great 1000 Miles Rally-01.mp4"
-    },
-    {
-      "label": "CoinOps",
-      "exe": "D:\\Emu\\CoinOPS Next\\CoinOPS.exe",
-      "image": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Img\\MAME.png",
-      "thumbVideo": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Video\\bloodwar.avi"
+      "thumbVideo": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Video\\1000 Miglia_ Great 1000 Miles Rally-01.mp4",
+      "waitForProcessName": null
     },
     {
       "label": "Hyperspin",
       "exe": "D:\\Emu\\CoinOPS Next\\CoinOPS.exe",
       "image": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Img\\Atari 7800.png",
-      "thumbVideo": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Video\\3countb.avi"
+      "thumbVideo": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Video\\3countb.avi",
+      "waitForProcessName": null
+    },
+    {
+      "label": "",
+      "exe": "",
+      "image": "",
+      "thumbVideo": null,
+      "waitForProcessName": null
     }
   ],
   "music": {
     "enabled": true,
     "musicRoot": "C:\\Users\\trume76\\ArcadeShellSelector\\bin\\Release\\net10.0-windows\\Media\\Music",
     "playRandom": false,
-    "selectedFile": "ELYSIUM.MOD",
+    "selectedFile": "DEADLOCK.XM",
     "volume": 100,
     "audioDevice": "Altavoces (Realtek(R) Audio)",
-    "thumbVideoVolume": 29
+    "audioDeviceId": "{0.0.0.00000000}.{e4c74e38-fb93-4e33-833a-7277230545f8}",
+    "thumbVideoVolume": 0
   },
   "Autor": {
     "Quien": "2026.Trume76"
@@ -71,10 +85,43 @@
     "xinputButtonRight": 0
   },
   "ledblinky": {
-    "enabled": false,
-    "exePath": ""
+    "enabled": true,
+    "exePath": "C:\\LEDBlinky\\LEDBlinky.exe"
   },
   "arranque": {
     "bootSplashEnabled": false
+  },
+  "theme": {
+    "preset": "minimal-dark",
+    "launcherFont": "Fixedsys Excelsior 3.01",
+    "bootSplashFont": "VT323",
+    "selectionBorderColor": "#FFFFFF",
+    "hoverOutlineColor": "#646464",
+    "titleColor": "#DCDCDC",
+    "buttonTextColor": "#C8C8C8",
+    "buttonHighlightBg": "#FFFFFF",
+    "buttonHighlightFg": "#000000",
+    "buttonBorderColor": "#505050",
+    "spectrumBarColor": "#B4B4B4",
+    "authorTextColor": "#64B4B4B4",
+    "networkStatusColor": "#B4C8C8C8",
+    "bootSplashPreset": null,
+    "bootSplashBg": "#000000",
+    "bootSplashPrimary": "#DCDCDC",
+    "bootSplashDim": "#646464",
+    "bootSplashBright": "#FFFFFF",
+    "bootSplashTag": "#A0A0A0",
+    "bootSplashInit": "#C8C8C8",
+    "bootSplashWarn": "#FFC850",
+    "bootSplashPhosphorTint": null,
+    "bootSplashScanlineAlpha": null,
+    "bootSplashVignetteAlpha": null,
+    "bootSplashCrtEffects": true
+  },
+  "remoteAccess": {
+    "enabled": true,
+    "port": 8484,
+    "pin": "6747",
+    "verbose": true
   }
 }

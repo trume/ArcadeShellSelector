@@ -45,6 +45,9 @@ namespace ArcadeShellSelector
             // Init logger early so config warnings are captured
             DebugLogger.Init(cfg?.Activa.Activa ?? false);
 
+            // Resolve theme colors and load private fonts before any forms are created
+            ThemeResolver.Init(cfg ?? new AppConfig());
+
             // Log config warnings (non-fatal)
             if (cfg != null && configErr != null)
                 DebugLogger.Warn("CONFIG", configErr);

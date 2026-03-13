@@ -7,6 +7,8 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Runtime.InteropServices;
+using System.Net.NetworkInformation;
+using System.Net.Sockets;
 using System.Windows.Forms;
 using LibVLCSharp.Shared;
 using SharpDX.DirectInput;
@@ -53,19 +55,23 @@ namespace ArcadeShellSelector
         private Form? _spectrumForm;
         private LedBlinky? _ledBlinky;
         private Button configButton = null!;
+        private Button reloadButton = null!;
         private Button closeButton = null!;
         private Label titleLabel = null!;
         private Label AutorApp = null!;
         private Label _inputIndicator = null!;
+        private Label? _remoteUriLabel;
+        private Process? _serverProcess;
         private PictureBox? autorIcon;
         private PictureBox? selectedPic;
-        private int _navIndex = -1; // -1 = no selection; 0..N-1 = options; N = configButton; N+1 = closeButton
+        private int _navIndex = -1; // -1 = no selection; 0..N-1 = options; N = configButton; N+1 = reloadButton; N+2 = closeButton
         private bool _childRunning;
         private Task? _resumeTask;
         private CancellationTokenSource? _musicDiagCts;
         private System.Windows.Forms.Timer? _zOrderTimer;
         private Label? _networkStatusLabel;
         private bool _closing;
+        private Form? _fadeForm;
 
         public Launcher(AppConfig? preloadedConfig = null)
         {
@@ -442,10 +448,10 @@ namespace ArcadeShellSelector
             titleLabel = new Label
             {
                 Text = config.Ui.Title,
-                ForeColor = Color.White,
+                ForeColor = ThemeResolver.Launcher.Title,
                 BackColor = Color.Transparent,
                 AutoSize = true,
-                Font = new Font("Segoe UI", 28, FontStyle.Bold)
+                Font = new Font(ThemeResolver.Launcher.Font, 28, FontStyle.Bold)
             };
             AddOverlayControl(titleLabel);
 
@@ -487,10 +493,10 @@ namespace ArcadeShellSelector
             AutorApp = new Label
             {
                 Text = config.Autor.Quien.ToString(),
-                ForeColor = Color.White,
+                ForeColor = ThemeResolver.Launcher.AuthorText,
                 BackColor = Color.Transparent,
                 AutoSize = false,              
-                Font = new Font("Segoe UI", 12, FontStyle.Regular)
+                Font = new Font(ThemeResolver.Launcher.Font, 12, FontStyle.Regular)
             };
             AddOverlayControl(AutorApp);
 
@@ -513,30 +519,32 @@ namespace ArcadeShellSelector
                 Text = "Configuración",
                 Width = 160,
                 Height = 44,
-                Font = new Font("Segoe UI", 12F, FontStyle.Regular),
+                Font = new Font(ThemeResolver.Launcher.Font, 12F, FontStyle.Regular),
                 BackColor = Color.Transparent,
-                ForeColor = Color.White,
+                ForeColor = ThemeResolver.Launcher.ButtonText,
                 UseVisualStyleBackColor = false,
                 FlatStyle = FlatStyle.Flat
             };
-            configButton.FlatAppearance.BorderColor = Color.Gray;
+            configButton.FlatAppearance.BorderColor = ThemeResolver.Launcher.ButtonBorder;
             configButton.FlatAppearance.BorderSize = 1;
             configButton.Click += ConfigButton_Click;
             WireButtonHover(configButton);
             AddOverlayControl(configButton);
+
+            reloadButton = new Button { Width = 0, Height = 0, Visible = false };
 
             closeButton = new Button
             {
                 Text = "Salir / Exit",
                 Width = 140,
                 Height = 44,
-                Font = new Font("Segoe UI", 12F, FontStyle.Regular),
+                Font = new Font(ThemeResolver.Launcher.Font, 12F, FontStyle.Regular),
                 BackColor = Color.Transparent,
-                ForeColor = Color.White,
+                ForeColor = ThemeResolver.Launcher.ButtonText,
                 UseVisualStyleBackColor = false,
                 FlatStyle = FlatStyle.Flat
             };
-            closeButton.FlatAppearance.BorderColor = Color.Gray;
+            closeButton.FlatAppearance.BorderColor = ThemeResolver.Launcher.ButtonBorder;
             closeButton.FlatAppearance.BorderSize = 1;
             closeButton.Click += CloseButton_Click;
             WireButtonHover(closeButton);
@@ -551,11 +559,27 @@ namespace ArcadeShellSelector
             {
                 Text = inputText,
                 AutoSize = true,
-                Font = new Font("Segoe UI", 9F, FontStyle.Regular),
-                ForeColor = Color.FromArgb(140, 255, 255, 255),
+                Font = new Font(ThemeResolver.Launcher.Font, 9F, FontStyle.Regular),
+                ForeColor = ThemeResolver.Launcher.AuthorText,
                 BackColor = Color.Transparent,
             };
             AddOverlayControl(_inputIndicator);
+
+            // Remote access URI — shown when remoteAccess.enabled is true
+            if (config.RemoteAccess.Enabled)
+            {
+                var ip = GetLocalIpAddress();
+                _remoteUriLabel = new Label
+                {
+                    Text = $"\U0001F310 http://{ip}:{config.RemoteAccess.Port}",
+                    AutoSize = true,
+                    Font = new Font(ThemeResolver.Launcher.Font, 9F, FontStyle.Regular),
+                    ForeColor = ThemeResolver.Launcher.AuthorText,
+                    BackColor = Color.Transparent,
+                };
+                AddOverlayControl(_remoteUriLabel);
+                StartRemoteServer();
+            }
 
             // Network status label — hidden until a UNC path launch needs to wait
             _networkStatusLabel = new Label
@@ -563,8 +587,8 @@ namespace ArcadeShellSelector
                 Text = "",
                 AutoSize = false,
                 TextAlign = ContentAlignment.MiddleCenter,
-                Font = new Font("Segoe UI", 14F, FontStyle.Regular),
-                ForeColor = Color.FromArgb(220, 180, 255, 180),
+                Font = new Font(ThemeResolver.Launcher.Font, 14F, FontStyle.Regular),
+                ForeColor = ThemeResolver.Launcher.NetworkStatus,
                 BackColor = Color.FromArgb(180, 0, 0, 0),
                 Visible = false,
             };
@@ -679,10 +703,10 @@ namespace ArcadeShellSelector
             return new Label
             {
                 Text = text,
-                ForeColor = Color.White,
+                ForeColor = ThemeResolver.Launcher.Title,
                 BackColor = Color.Transparent,
                 AutoSize = true,
-                Font = new Font("Segoe UI", 20F, FontStyle.Bold),
+                Font = new Font(ThemeResolver.Launcher.Font, 20F, FontStyle.Bold),
                 TextAlign = ContentAlignment.MiddleCenter
             };
         }
@@ -853,6 +877,14 @@ namespace ArcadeShellSelector
                 bottomY + (Math.Max(closeButton.Height, autorHeight) - _inputIndicator.Height) / 2
             );
 
+            if (_remoteUriLabel != null)
+            {
+                _remoteUriLabel.Location = new Point(
+                    _inputIndicator.Right + gap,
+                    bottomY + (Math.Max(closeButton.Height, autorHeight) - _remoteUriLabel.Height) / 2
+                );
+            }
+
             SyncOverlayBounds();
             SyncSpectrumFormBounds();
             EnforceZOrder();
@@ -946,6 +978,10 @@ namespace ArcadeShellSelector
             if (isUnc)
                 await WaitForUncPathAsync(exePath);
 
+            // Fade to black before tearing down the UI
+            if (config.Ui.FadeTransition)
+                await FadeOutAsync(config.Ui.FadeTransitionMs);
+
             // disable UI while child runs
             foreach (var (pic, _, _, _) in optionUis)
                 pic.Enabled = false;
@@ -974,6 +1010,9 @@ namespace ArcadeShellSelector
             // Signal LEDBlinky: game starting
             try { _ledBlinky?.GameStart(); } catch { }
 
+            // Hide fade form so the child frontend can receive input
+            try { if (_fadeForm != null) _fadeForm.Visible = false; } catch { }
+
             // minimize launcher
             try { WindowState = FormWindowState.Minimized; } catch { }
 
@@ -991,6 +1030,9 @@ namespace ArcadeShellSelector
                 if (!config.Ui.TopMost) TopMost = false;
             }
             catch (Exception ex) { DebugLogger.Warn("LAUNCH", $"Window restore: {ex.Message}"); }
+
+            // Re-show fade form (still black) so the restore transition is hidden
+            try { if (_fadeForm != null) { _fadeForm.Visible = true; _fadeForm.BringToFront(); } } catch { }
 
             // Small delay to let WinForms finish processing the maximize before showing owned forms
             await Task.Delay(200);
@@ -1027,6 +1069,10 @@ namespace ArcadeShellSelector
                 pic.Enabled = true;
             closeButton.Enabled = true;
 
+            // Fade back in from black
+            if (config.Ui.FadeTransition)
+                await FadeInAsync(config.Ui.FadeTransitionMs);
+
             // resume XInput polling
             try { xinputTimer?.Start(); } catch { }
             try { _dinputTimer?.Start(); } catch { }
@@ -1040,6 +1086,52 @@ namespace ArcadeShellSelector
             }
         }
  
+        private async Task FadeOutAsync(int durationMs)
+        {
+            var screen = Screen.FromControl(this);
+            var bounds = screen.Bounds;
+
+            _fadeForm = new Form
+            {
+                FormBorderStyle = FormBorderStyle.None,
+                BackColor = Color.Black,
+                Bounds = bounds,
+                TopMost = true,
+                ShowInTaskbar = false,
+                Opacity = 0
+            };
+            _fadeForm.Show();
+
+            const int steps = 20;
+            double stepVal = 1.0 / steps;
+            int interval = Math.Max(1, durationMs / steps);
+
+            for (int i = 1; i <= steps; i++)
+            {
+                _fadeForm.Opacity = i * stepVal;
+                await Task.Delay(interval);
+            }
+            _fadeForm.Opacity = 1.0;
+        }
+
+        private async Task FadeInAsync(int durationMs)
+        {
+            if (_fadeForm == null) return;
+
+            const int steps = 20;
+            double stepVal = 1.0 / steps;
+            int interval = Math.Max(1, durationMs / steps);
+
+            for (int i = steps - 1; i >= 0; i--)
+            {
+                _fadeForm.Opacity = i * stepVal;
+                await Task.Delay(interval);
+            }
+            _fadeForm.Close();
+            _fadeForm.Dispose();
+            _fadeForm = null;
+        }
+
         private string? RunSelectedApp(string exePath, string? waitForProcessName = null)
         {
             LogLaunch($"=== RunSelectedApp START === exe={exePath}, waitFor={waitForProcessName}");
@@ -1235,12 +1327,12 @@ namespace ArcadeShellSelector
 
             // Highlight bottom buttons when navigated via controller
             bool cfgSelected = _navIndex == optionUis.Count;
-            configButton.BackColor = cfgSelected ? Color.White : Color.Transparent;
-            configButton.ForeColor = cfgSelected ? Color.Black : Color.White;
+            configButton.BackColor = cfgSelected ? ThemeResolver.Launcher.ButtonHighlightBg : Color.Transparent;
+            configButton.ForeColor = cfgSelected ? ThemeResolver.Launcher.ButtonHighlightFg : ThemeResolver.Launcher.ButtonText;
 
             bool exitSelected = _navIndex == optionUis.Count + 1;
-            closeButton.BackColor = exitSelected ? Color.White : Color.Transparent;
-            closeButton.ForeColor = exitSelected ? Color.Black : Color.White;
+            closeButton.BackColor = exitSelected ? ThemeResolver.Launcher.ButtonHighlightBg : Color.Transparent;
+            closeButton.ForeColor = exitSelected ? ThemeResolver.Launcher.ButtonHighlightFg : ThemeResolver.Launcher.ButtonText;
         }
 
         private void StartThumbVideo(PictureBox pb)
@@ -1391,7 +1483,7 @@ namespace ArcadeShellSelector
 
             if (pb == selectedPic)
             {
-                using var pen = new Pen(Color.CornflowerBlue, 6);
+                using var pen = new Pen(ThemeResolver.Launcher.SelectionBorder, 6);
                 pen.Alignment = System.Drawing.Drawing2D.PenAlignment.Outset;
                 var r = new Rectangle(0, 0, pb.ClientSize.Width - 1, pb.ClientSize.Height - 1);
                 e.Graphics.DrawRectangle(pen, r);
@@ -1401,7 +1493,7 @@ namespace ArcadeShellSelector
                 // if currently zoomed (hover), draw a thinner subtle outline
                 if (_originalBounds.TryGetValue(pb, out var rect) && (pb.Width != rect.Width || pb.Height != rect.Height))
                 {
-                    using var pen = new Pen(Color.FromArgb(200, 200, 200), 2);
+                    using var pen = new Pen(ThemeResolver.Launcher.HoverOutline, 2);
                     var r = new Rectangle(0, 0, pb.ClientSize.Width - 1, pb.ClientSize.Height - 1);
                     e.Graphics.DrawRectangle(pen, r);
                 }
@@ -1410,8 +1502,11 @@ namespace ArcadeShellSelector
 
         private static void WireButtonHover(Button btn)
         {
-            btn.MouseEnter += (_, _) => { btn.BackColor = Color.White; btn.ForeColor = Color.Black; };
-            btn.MouseLeave += (_, _) => { btn.BackColor = Color.Transparent; btn.ForeColor = Color.White; };
+            var hlBg = ThemeResolver.Launcher.ButtonHighlightBg;
+            var hlFg = ThemeResolver.Launcher.ButtonHighlightFg;
+            var normFg = ThemeResolver.Launcher.ButtonText;
+            btn.MouseEnter += (_, _) => { btn.BackColor = hlBg; btn.ForeColor = hlFg; };
+            btn.MouseLeave += (_, _) => { btn.BackColor = Color.Transparent; btn.ForeColor = normFg; };
         }
 
         private async void ConfigButton_Click(object? sender, EventArgs e)
@@ -1449,6 +1544,18 @@ namespace ArcadeShellSelector
             Close();
         }
 
+        private void ReloadButton_Click(object? sender, EventArgs e)
+        {
+            var exePath = Environment.ProcessPath ?? Application.ExecutablePath;
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = exePath,
+                UseShellExecute = true,
+                WorkingDirectory = AppContext.BaseDirectory
+            });
+            Close();
+        }
+
         private void MainForm_KeyDown(object? sender, KeyEventArgs e)
         {
             if (e.KeyCode == Keys.Escape)
@@ -1462,6 +1569,10 @@ namespace ArcadeShellSelector
         {
             _closing = true;
 
+            // Kill the remote server FIRST — VLC dispose below can deadlock,
+            // and if that happens the server would stay alive as an orphan process.
+            try { StopRemoteServer(); } catch (Exception ex) { DebugLogger.Warn("CLOSE", $"Server stop: {ex.Message}"); }
+
             // Signal LEDBlinky: front-end quitting
             try { _ledBlinky?.FrontEndQuit(); } catch (Exception ex) { DebugLogger.Warn("CLOSE", $"LEDBlinky quit: {ex.Message}"); }
 
@@ -1469,16 +1580,12 @@ namespace ArcadeShellSelector
             try { _musicDiagCts?.Cancel(); } catch (Exception ex) { DebugLogger.Warn("CLOSE", $"CTS cancel: {ex.Message}"); }
 
             // stop and dispose timers
-            _zOrderTimer?.Stop();
-            _zOrderTimer?.Dispose();
-            xinputTimer?.Stop();
-            xinputTimer?.Dispose();
-
-            _dinputTimer?.Stop();
-            _dinputTimer?.Dispose();
+            try { _zOrderTimer?.Stop(); _zOrderTimer?.Dispose(); } catch (Exception ex) { DebugLogger.Warn("CLOSE", $"ZOrder timer: {ex.Message}"); }
+            try { xinputTimer?.Stop(); xinputTimer?.Dispose(); } catch (Exception ex) { DebugLogger.Warn("CLOSE", $"XInput timer: {ex.Message}"); }
+            try { _dinputTimer?.Stop(); _dinputTimer?.Dispose(); } catch (Exception ex) { DebugLogger.Warn("CLOSE", $"DInput timer: {ex.Message}"); }
             try { _dinputJoystick?.Unacquire(); } catch (Exception ex) { DebugLogger.Warn("CLOSE", $"DInput unacquire: {ex.Message}"); }
-            _dinputJoystick?.Dispose();
-            _directInput?.Dispose();
+            try { _dinputJoystick?.Dispose(); } catch (Exception ex) { DebugLogger.Warn("CLOSE", $"DInput joystick: {ex.Message}"); }
+            try { _directInput?.Dispose(); } catch (Exception ex) { DebugLogger.Warn("CLOSE", $"DirectInput: {ex.Message}"); }
 
             // Owned forms are auto-closed by WinForms; no need to close overlay manually.
 
@@ -1487,7 +1594,7 @@ namespace ArcadeShellSelector
             try { spectrumAnalyzer?.Dispose(); } catch (Exception ex) { DebugLogger.Error("CLOSE", $"SpectrumAnalyzer dispose: {ex.Message}"); }
             // _spectrumForm is owned, so WinForms auto-closes it.
 
-            // Stop thumb video rendering
+            // Stop thumb video rendering (VLC dispose can hang — hence server kill is above)
             try { StopThumbVideoInternal(); } catch (Exception ex) { DebugLogger.Warn("CLOSE", $"Thumb stop: {ex.Message}"); }
             try { _thumbMedia?.Dispose(); } catch (Exception ex) { DebugLogger.Warn("CLOSE", $"Thumb media dispose: {ex.Message}"); }
             try { _thumbPlayer?.Dispose(); } catch (Exception ex) { DebugLogger.Warn("CLOSE", $"Thumb player dispose: {ex.Message}"); }
@@ -1498,10 +1605,60 @@ namespace ArcadeShellSelector
                 _thumbBuffer = IntPtr.Zero;
             }
 
-            // Stop video synchronously before dispose to avoid blocking the UI thread.
             try { videoBackground?.Stop(); } catch (Exception ex) { DebugLogger.Error("CLOSE", $"VideoBackground stop: {ex.Message}"); }
             try { videoBackground?.Dispose(); } catch (Exception ex) { DebugLogger.Error("CLOSE", $"VideoBackground dispose: {ex.Message}"); }
             base.OnFormClosed(e);
+        }
+
+        private void StartRemoteServer()
+        {
+            var serverExe = Path.Combine(AppContext.BaseDirectory, "ArcadeShellServer.exe");
+            if (!File.Exists(serverExe))
+            {
+                DebugLogger.Warn("REMOTE", $"Server exe not found: {serverExe}");
+                return;
+            }
+            try
+            {
+                _serverProcess = new Process
+                {
+                    StartInfo = new ProcessStartInfo
+                    {
+                        FileName = serverExe,
+                        WorkingDirectory = AppContext.BaseDirectory,
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                    },
+                    EnableRaisingEvents = true,
+                };
+                _serverProcess.Start();
+                DebugLogger.Info("REMOTE", $"Server started (PID {_serverProcess.Id})");
+            }
+            catch (Exception ex)
+            {
+                DebugLogger.Error("REMOTE", $"Failed to start server: {ex.Message}");
+                _serverProcess = null;
+            }
+        }
+
+        private void StopRemoteServer()
+        {
+            if (_serverProcess == null || _serverProcess.HasExited) return;
+            try
+            {
+                _serverProcess.Kill(entireProcessTree: true);
+                _serverProcess.WaitForExit(3000);
+                DebugLogger.Info("REMOTE", $"Server stopped");
+            }
+            catch (Exception ex)
+            {
+                DebugLogger.Warn("REMOTE", $"Server kill: {ex.Message}");
+            }
+            finally
+            {
+                _serverProcess.Dispose();
+                _serverProcess = null;
+            }
         }
 
         private void TryStartBackground()
@@ -1556,6 +1713,25 @@ namespace ArcadeShellSelector
             {
                 // ignore background startup errors
             }
+        }
+
+        private static string GetLocalIpAddress()
+        {
+            try
+            {
+                foreach (var ni in NetworkInterface.GetAllNetworkInterfaces())
+                {
+                    if (ni.OperationalStatus != OperationalStatus.Up) continue;
+                    if (ni.NetworkInterfaceType is NetworkInterfaceType.Loopback or NetworkInterfaceType.Tunnel) continue;
+                    foreach (var addr in ni.GetIPProperties().UnicastAddresses)
+                    {
+                        if (addr.Address.AddressFamily == AddressFamily.InterNetwork)
+                            return addr.Address.ToString();
+                    }
+                }
+            }
+            catch { }
+            return "0.0.0.0";
         }
     }
 
