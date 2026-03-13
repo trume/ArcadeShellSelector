@@ -32,10 +32,7 @@ Comes with two companion tools:
 
 ### Mobile Remote — Phone Dashboard
 
-<p>
-  <img src="Media/Screenshots/HttpServ-preview.png" alt="Mobile remote control" width="600" />
-  <img src="Media/Img/Mobile.png" alt="Mobile app on phone" width="250" />
-</p>
+![Mobile app on phone](Media/Img/Mobile.png)
 
 ---
 
