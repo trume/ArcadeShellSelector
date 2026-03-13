@@ -1,10 +1,11 @@
 # ArcadeShellSelector
 
 A full-screen arcade launcher for Windows that replaces the desktop shell. Pick your frontend, fire it up, and get back to playing — all from a controller-friendly, cinematic interface with video backgrounds, music, and CRT-style boot animations.
+![Launcher](Media/Screenshots/minimal-dark_preview.png)
 
 Comes with two companion tools:
-- **ArcadeShellConfigurator** — ![a visual settings editor for every aspect of the launcher.](Media/Screenshots/Config1-preview.png)
-- **ArcadeShellServer** — ![a built-in mobile server so you can manage your cabinet from your phone.](Media/Screenshots/HttpServ-preview.png)
+- **ArcadeShellConfigurator** — a visual settings editor for every aspect of the launcher.!
+- **ArcadeShellServer** — a built-in mobile server so you can manage your cabinet from your phone.
 
 ---
 
