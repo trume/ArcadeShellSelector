@@ -28,7 +28,7 @@ Comes with two companion tools:
 
 ### Configurator — Settings Editor
 
-![Configurator settings editor](Media/Screenshots/Config1-preview.png)
+<img src="Media/Screenshots/Config1-preview.png" alt="Configurator settings editor" width="100%" />
 
 ### Mobile Remote — Phone Dashboard
 
