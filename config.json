@@ -1,4 +1,4 @@
-﻿{
+{
   "ui": {
     "title": "\u00BFA qu\u00E9 jugamos hoy?",
     "topMost": true,
@@ -21,36 +21,25 @@
       "label": "CoinOpsew33",
       "exe": "D:\\Emu\\CoinOPS Next\\CoinOPS.exe",
       "image": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Img\\MAME.png",
-      "thumbVideo": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Video\\bloodwar.avi",
-      "waitForProcessName": null
+      "thumbVideo": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Video\\bloodwar.avi"
     },
     {
       "label": "CoinOps",
       "exe": "D:\\Emu\\CoinOPS Next\\CoinOPS.exe",
       "image": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Img\\CoinOPS Next.jpg",
-      "thumbVideo": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Video\\2 On 2 Open Ice Challenge-01.mp4",
-      "waitForProcessName": null
+      "thumbVideo": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Video\\2 On 2 Open Ice Challenge-01.mp4"
     },
     {
       "label": "CoinOps",
       "exe": "D:\\Emu\\CoinOPS Next\\CoinOPS.exe",
       "image": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Img\\CoinOPS Helper.jpg",
-      "thumbVideo": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Video\\1000 Miglia_ Great 1000 Miles Rally-01.mp4",
-      "waitForProcessName": null
+      "thumbVideo": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Video\\1000 Miglia_ Great 1000 Miles Rally-01.mp4"
     },
     {
       "label": "Hyperspin",
       "exe": "D:\\Emu\\CoinOPS Next\\CoinOPS.exe",
       "image": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Img\\Atari 7800.png",
-      "thumbVideo": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Video\\3countb.avi",
-      "waitForProcessName": null
-    },
-    {
-      "label": "",
-      "exe": "",
-      "image": "",
-      "thumbVideo": null,
-      "waitForProcessName": null
+      "thumbVideo": "C:\\Users\\trume76\\ArcadeShellSelector\\Media\\Video\\3countb.avi"
     }
   ],
   "music": {
@@ -89,7 +78,7 @@
     "exePath": "C:\\LEDBlinky\\LEDBlinky.exe"
   },
   "arranque": {
-    "bootSplashEnabled": false
+    "bootSplashEnabled": true
   },
   "theme": {
     "preset": "minimal-dark",
@@ -105,7 +94,6 @@
     "spectrumBarColor": "#B4B4B4",
     "authorTextColor": "#64B4B4B4",
     "networkStatusColor": "#B4C8C8C8",
-    "bootSplashPreset": null,
     "bootSplashBg": "#000000",
     "bootSplashPrimary": "#DCDCDC",
     "bootSplashDim": "#646464",
@@ -113,9 +101,6 @@
     "bootSplashTag": "#A0A0A0",
     "bootSplashInit": "#C8C8C8",
     "bootSplashWarn": "#FFC850",
-    "bootSplashPhosphorTint": null,
-    "bootSplashScanlineAlpha": null,
-    "bootSplashVignetteAlpha": null,
     "bootSplashCrtEffects": true
   },
   "remoteAccess": {

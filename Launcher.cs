@@ -979,6 +979,8 @@ namespace ArcadeShellSelector
                 await WaitForUncPathAsync(exePath);
 
             // Fade to black before tearing down the UI
+            // Stop z-order timer first so it doesn't fight with the fade overlay
+            try { _zOrderTimer?.Stop(); } catch { }
             if (config.Ui.FadeTransition)
                 await FadeOutAsync(config.Ui.FadeTransitionMs);
 
@@ -990,7 +992,6 @@ namespace ArcadeShellSelector
             // stop XInput polling so child app gets exclusive gamepad
             try { xinputTimer?.Stop(); } catch { }
             try { _dinputTimer?.Stop(); } catch { }
-            try { _zOrderTimer?.Stop(); } catch { }
 
             // stop spectrum (lightweight, safe on UI thread)
             try { spectrumPanel?.StopRefresh(); } catch { }
@@ -1101,6 +1102,7 @@ namespace ArcadeShellSelector
                 Opacity = 0
             };
             _fadeForm.Show();
+            _fadeForm.BringToFront();
 
             const int steps = 20;
             double stepVal = 1.0 / steps;

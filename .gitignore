@@ -10,6 +10,7 @@ obj/
 
 ## Publish output
 deploy/
+publish/
 
 ## Debug logs
 debug.log
