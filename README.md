@@ -8,34 +8,6 @@ Comes with two companion tools:
 
 ---
 
-## Screenshots
-
-### Launcher — Minimal Dark theme
-
-![Launcher with Minimal Dark theme](Media/Screenshots/minimal-dark_preview.png)
-
-### Launcher — Amber CRT theme
-
-![Launcher with Amber CRT theme](Media/Screenshots/amber-crt_preview.png)
-
-### Launcher — Synthwave theme
-
-![Launcher with Synthwave theme](Media/Screenshots/synthwave_preview.png)
-
-### Launcher — Ice Blue theme
-
-![Launcher with Ice Blue theme](Media/Screenshots/ice-blue_preview.png)
-
-### Configurator — Settings Editor
-
-<img src="Media/Screenshots/Config1-preview.png" alt="Configurator settings editor" width="100%" />
-
-### Mobile Remote — Phone Dashboard
-
-<img src="Media/Img/Mobile.png" alt="Mobile app on phone" width="300" />
-
----
-
 ## Why this could be for you?
 
 🕹️ **Multiple frontends, one launcher** — CoinOPS, HyperSpin, RetroArch, BigBox, MAME… stop choosing one and launch them all from a single full-screen menu.
@@ -74,6 +46,34 @@ Comes with two companion tools:
 - **Video background** — A looping video fills the screen behind your options.
 - **LedBlinky integration** — Optional LED feedback for arcade cabinets with LedBlinky hardware.
 - **Shell replacement ready** — Designed to run as the Windows shell. Starts `explorer.exe` gracefully when you exit.
+
+---
+
+## Screenshots
+
+### Launcher — Minimal Dark theme
+
+![Launcher with Minimal Dark theme](Media/Screenshots/minimal-dark_preview.png)
+
+### Launcher — Amber CRT theme
+
+![Launcher with Amber CRT theme](Media/Screenshots/amber-crt_preview.png)
+
+### Launcher — Synthwave theme
+
+![Launcher with Synthwave theme](Media/Screenshots/synthwave_preview.png)
+
+### Launcher — Ice Blue theme
+
+![Launcher with Ice Blue theme](Media/Screenshots/ice-blue_preview.png)
+
+### Configurator — Settings Editor
+
+<img src="Media/Screenshots/Config1-preview.png" alt="Configurator settings editor" width="100%" />
+
+### Mobile Remote — Phone Dashboard
+
+<img src="Media/Img/Mobile.png" alt="Mobile app on phone" width="300" />
 
 ---
 
