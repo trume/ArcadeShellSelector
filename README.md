@@ -212,6 +212,16 @@ ArcadeShellSelector.sln
 
 ---
 
+## Credits
+
+### Fonts
+
+- **[Lower Pixel Regular](https://www.fontmirror.com/lower-pixel-regular)** — A retro-inspired pixelated font used in the boot splash. Free for personal use.
+- **[VT323](https://fonts.google.com/specimen/VT323)** — A monospace font inspired by the DEC VT320 terminal. Licensed under the SIL Open Font License.
+- **Bm437 IBM VGA 9x16 / Bm437 Phoenix BIOS** — Bitmap fonts from [The Ultimate Oldschool PC Font Pack](https://int10h.org/oldschool-pc-fonts/) by VileR. Licensed under Creative Commons Attribution-ShareAlike 4.0.
+
+---
+
 ## License
 
 See [LICENSE](LICENSE) for details.
