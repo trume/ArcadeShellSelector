@@ -1,4 +1,5 @@
 using ArcadeShellSelector;
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
@@ -54,8 +55,20 @@ string pin = remote.Pin ?? "0000";
 // Initialize shared debug logger
 DebugLogger.Init(cfg.Activa.Activa);
 
+// Clean up leftover .tmp files from interrupted saves
+foreach (var tmp in Directory.GetFiles(AppContext.BaseDirectory, "*.tmp"))
+{
+    try { File.Delete(tmp); DebugLogger.Info("CLEANUP", $"Removed leftover temp file: {Path.GetFileName(tmp)}"); }
+    catch { /* best effort */ }
+}
+
+// Rate limiter for auth endpoint (IP → list of attempt timestamps)
+var authAttempts = new ConcurrentDictionary<string, List<DateTime>>();
+const int MaxAuthAttempts = 5;
+var authWindowSeconds = TimeSpan.FromSeconds(60);
+
 // Token store: valid session tokens (PIN-derived, 1h expiry)
-var validTokens = new Dictionary<string, DateTime>();
+var validTokens = new ConcurrentDictionary<string, DateTime>();
 string GenerateToken()
 {
     var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
@@ -66,7 +79,7 @@ bool IsValidToken(HttpContext ctx)
 {
     // Prune expired
     var expired = validTokens.Where(kv => kv.Value < DateTime.UtcNow).Select(kv => kv.Key).ToList();
-    foreach (var k in expired) validTokens.Remove(k);
+    foreach (var k in expired) validTokens.TryRemove(k, out _);
 
     var token = ctx.Request.Cookies["ass_token"] ?? ctx.Request.Headers["X-Auth-Token"].FirstOrDefault();
     return token != null && validTokens.ContainsKey(token);
@@ -83,6 +96,25 @@ builder.Logging.SetMinimumLevel(remote.Verbose ? LogLevel.Information : LogLevel
 
 var app = builder.Build();
 string localIp = GetLocalIpAddress();
+
+// --- Global exception handler middleware ---
+app.Use(async (ctx, next) =>
+{
+    try
+    {
+        await next();
+    }
+    catch (Exception ex)
+    {
+        DebugLogger.Warn("HTTP", $"Unhandled exception on {ctx.Request.Method} {ctx.Request.Path}: {ex.Message}");
+        if (!ctx.Response.HasStarted)
+        {
+            ctx.Response.StatusCode = 500;
+            ctx.Response.ContentType = "application/json";
+            await ctx.Response.WriteAsync(JsonSerializer.Serialize(new { error = "Internal server error" }));
+        }
+    }
+});
 
 // --- HTTP request logging middleware ---
 app.Use(async (ctx, next) =>
@@ -127,23 +159,46 @@ app.MapGet("/favicon.ico", async (HttpContext ctx) =>
 // --- Auth ---
 app.MapPost("/api/auth", async (HttpContext ctx) =>
 {
-    var body = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body);
-    var submittedPin = body.TryGetProperty("pin", out var p) ? p.GetString() : null;
-
-    if (!string.Equals(submittedPin, pin, StringComparison.Ordinal))
+    // Rate limiting: max 5 attempts per IP per 60 seconds
+    var clientIp = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+    var now = DateTime.UtcNow;
+    var attempts = authAttempts.GetOrAdd(clientIp, _ => new List<DateTime>());
+    lock (attempts)
     {
-        ctx.Response.StatusCode = 401;
-        return Results.Json(new { error = "PIN incorrecto" });
+        attempts.RemoveAll(t => now - t > authWindowSeconds);
+        if (attempts.Count >= MaxAuthAttempts)
+        {
+            DebugLogger.Warn("AUTH", $"Rate limited {clientIp} ({attempts.Count} attempts)");
+            ctx.Response.StatusCode = 429;
+            return Results.Json(new { error = "Too many attempts. Try again later." });
+        }
+        attempts.Add(now);
     }
 
-    var token = GenerateToken();
-    ctx.Response.Cookies.Append("ass_token", token, new CookieOptions
+    try
     {
-        HttpOnly = true,
-        SameSite = SameSiteMode.Strict,
-        MaxAge = TimeSpan.FromHours(1)
-    });
-    return Results.Json(new { ok = true });
+        var body = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body);
+        var submittedPin = body.TryGetProperty("pin", out var p) ? p.GetString() : null;
+
+        if (!string.Equals(submittedPin, pin, StringComparison.Ordinal))
+        {
+            ctx.Response.StatusCode = 401;
+            return Results.Json(new { error = "PIN incorrecto" });
+        }
+
+        var token = GenerateToken();
+        ctx.Response.Cookies.Append("ass_token", token, new CookieOptions
+        {
+            HttpOnly = true,
+            SameSite = SameSiteMode.Strict,
+            MaxAge = TimeSpan.FromHours(1)
+        });
+        return Results.Json(new { ok = true });
+    }
+    catch (JsonException)
+    {
+        return Results.BadRequest(new { error = "Invalid request body" });
+    }
 });
 
 // --- API (all require auth) ---
@@ -151,11 +206,23 @@ app.MapGet("/api/config", (HttpContext ctx) =>
 {
     if (!IsValidToken(ctx)) return Results.StatusCode(401);
 
-    var (current, _) = AppConfig.TryLoadFromFile(configPath);
-    if (current == null) return Results.StatusCode(500);
+    try
+    {
+        var (current, loadErr) = AppConfig.TryLoadFromFile(configPath);
+        if (current == null)
+        {
+            DebugLogger.Warn("CONFIG", $"Failed to load config: {loadErr}");
+            return Results.Json(new { error = "Failed to load configuration" }, statusCode: 500);
+        }
 
-    var opts = new JsonSerializerOptions { WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
-    return Results.Json(current, opts);
+        var opts = new JsonSerializerOptions { WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+        return Results.Json(current, opts);
+    }
+    catch (Exception ex)
+    {
+        DebugLogger.Warn("CONFIG", $"Error reading config: {ex.Message}");
+        return Results.Json(new { error = "Failed to read configuration" }, statusCode: 500);
+    }
 });
 
 app.MapPut("/api/config", async (HttpContext ctx) =>
@@ -223,30 +290,48 @@ app.MapPut("/api/config", async (HttpContext ctx) =>
     {
         return Results.BadRequest(new { error = $"Invalid JSON: {ex.Message}" });
     }
+    catch (IOException ex)
+    {
+        DebugLogger.Warn("CONFIG", $"I/O error saving config: {ex.Message}");
+        return Results.Json(new { error = "Failed to write configuration file" }, statusCode: 500);
+    }
+    catch (UnauthorizedAccessException ex)
+    {
+        DebugLogger.Warn("CONFIG", $"Access denied saving config: {ex.Message}");
+        return Results.Json(new { error = "Permission denied writing configuration" }, statusCode: 403);
+    }
 });
 
 app.MapGet("/api/status", (HttpContext ctx) =>
 {
     if (!IsValidToken(ctx)) return Results.StatusCode(401);
 
-    var (current, _) = AppConfig.TryLoadFromFile(configPath);
-    var input = current?.Input;
-    var inputMethod = (input?.XInputEnabled == true, input?.DInputEnabled == true) switch
+    try
     {
-        (true, true) => "XInput + DInput",
-        (true, false) => "XInput",
-        (false, true) => "DInput",
-        _ => "Ninguno"
-    };
-    return Results.Json(new
+        var (current, _) = AppConfig.TryLoadFromFile(configPath);
+        var input = current?.Input;
+        var inputMethod = (input?.XInputEnabled == true, input?.DInputEnabled == true) switch
+        {
+            (true, true) => "XInput + DInput",
+            (true, false) => "XInput",
+            (false, true) => "DInput",
+            _ => "Ninguno"
+        };
+        return Results.Json(new
+        {
+            uptime = Environment.TickCount64 / 1000,
+            hostname = Environment.MachineName,
+            serverIp = localIp,
+            serverPort = port,
+            inputMethod,
+            musicEnabled = current?.Music.Enabled ?? false
+        });
+    }
+    catch (Exception ex)
     {
-        uptime = Environment.TickCount64 / 1000,
-        hostname = Environment.MachineName,
-        serverIp = localIp,
-        serverPort = port,
-        inputMethod,
-        musicEnabled = current?.Music.Enabled ?? false
-    });
+        DebugLogger.Warn("STATUS", $"Error reading status: {ex.Message}");
+        return Results.Json(new { error = "Failed to read status" }, statusCode: 500);
+    }
 });
 
 // --- Start ---

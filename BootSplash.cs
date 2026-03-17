@@ -75,7 +75,10 @@ namespace ArcadeShellSelector
         // ── Timers ───────────────────────────────────────────────────────────
         private readonly System.Windows.Forms.Timer _typeTimer;
         private readonly System.Windows.Forms.Timer _cursorTimer;
-
+        // ── Cached GDI+ resources for Canvas_Paint ──────────────────────────────
+        private readonly Dictionary<Color, SolidBrush> _brushCache = new();
+        private Font? _hintFont;
+        private SizeF _hintSize;
         // ─────────────────────────────────────────────────────────────────────
         public BootSplash()
         {
@@ -416,6 +419,13 @@ namespace ArcadeShellSelector
 
         // ── Paint ────────────────────────────────────────────────────────────
 
+        private SolidBrush GetCachedBrush(Color c)
+        {
+            if (!_brushCache.TryGetValue(c, out var br))
+                _brushCache[c] = br = new SolidBrush(c);
+            return br;
+        }
+
         private void Canvas_Paint(object? sender, PaintEventArgs e)
         {
             var g = e.Graphics;
@@ -440,12 +450,8 @@ namespace ArcadeShellSelector
                 if (line.Text.Length > 0)
                 {
                     if (line.Timestamp.Length > 0)
-                    {
-                        using var tsBr = new SolidBrush(ColDim);
-                        g.DrawString($"[{line.Timestamp}] ", _font, tsBr, tsX, y);
-                    }
-                    using var br = new SolidBrush(line.Color);
-                    g.DrawString(line.Text, _font, br, x, y);
+                        g.DrawString($"[{line.Timestamp}] ", _font, GetCachedBrush(ColDim), tsX, y);
+                    g.DrawString(line.Text, _font, GetCachedBrush(line.Color), x, y);
                 }
                 y += _lineH;
                 if (y > Height - 40) break;
@@ -455,16 +461,10 @@ namespace ArcadeShellSelector
             if (_current != null && y <= Height - 40)
             {
                 if (_current.Timestamp.Length > 0)
-                {
-                    using var tsBr = new SolidBrush(ColDim);
-                    g.DrawString($"[{_current.Timestamp}] ", _font, tsBr, tsX, y);
-                }
+                    g.DrawString($"[{_current.Timestamp}] ", _font, GetCachedBrush(ColDim), tsX, y);
                 string partial = _current.Text[.._typedChars];
                 if (partial.Length > 0)
-                {
-                    using var br = new SolidBrush(_current.Color);
-                    g.DrawString(partial, _font, br, x, y);
-                }
+                    g.DrawString(partial, _font, GetCachedBrush(_current.Color), x, y);
 
                 // Block cursor
                 if (_cursorOn)
@@ -472,8 +472,7 @@ namespace ArcadeShellSelector
                     float cx = partial.Length > 0
                         ? x + g.MeasureString(partial, _font).Width - 4
                         : x;
-                    using var cb = new SolidBrush(ColBright);
-                    g.FillRectangle(cb, cx, y + 2f, 10f, _lineH - 4f);
+                    g.FillRectangle(GetCachedBrush(ColBright), cx, y + 2f, 10f, _lineH - 4f);
                 }
                 y += _lineH;
             }
@@ -482,8 +481,7 @@ namespace ArcadeShellSelector
                 // Idle cursor between lines
                 if (_cursorOn)
                 {
-                    using var cb = new SolidBrush(ColBright);
-                    g.FillRectangle(cb, x, y + 2f, 10f, _lineH - 4f);
+                    g.FillRectangle(GetCachedBrush(ColBright), x, y + 2f, 10f, _lineH - 4f);
                 }
             }
 
@@ -492,13 +490,12 @@ namespace ArcadeShellSelector
             if (_crtEffects)
             {
                 // Phosphor tint over entire surface
-                using var phosphorBr = new SolidBrush(_phosphorTint);
-                g.FillRectangle(phosphorBr, 0, 0, Width, Height);
+                g.FillRectangle(GetCachedBrush(_phosphorTint), 0, 0, Width, Height);
 
                 // Scanlines — dark stripe every 2 px for interlace look
                 if (_scanlineAlpha > 0)
                 {
-                    using var scanBr = new SolidBrush(Color.FromArgb(_scanlineAlpha, 0, 0, 0));
+                    var scanBr = GetCachedBrush(Color.FromArgb(_scanlineAlpha, 0, 0, 0));
                     for (int sy = 0; sy < Height; sy += 2)
                         g.FillRectangle(scanBr, 0, sy, Width, 1);
                 }
@@ -533,11 +530,10 @@ namespace ArcadeShellSelector
             }
 
             // Skip hint (bottom-right, very dim)
-            using var hintFont = new Font(_font.FontFamily, 9f);
-            using var hintBr   = new SolidBrush(Color.FromArgb(55, ColDefault));
+            _hintFont ??= new Font(_font.FontFamily, 9f);
             const string hint  = "Press any key to skip";
-            var hsz = g.MeasureString(hint, hintFont);
-            g.DrawString(hint, hintFont, hintBr, Width - hsz.Width - 16, Height - hsz.Height - 10);
+            if (_hintSize.IsEmpty) _hintSize = g.MeasureString(hint, _hintFont);
+            g.DrawString(hint, _hintFont, GetCachedBrush(Color.FromArgb(55, ColDefault)), Width - _hintSize.Width - 16, Height - _hintSize.Height - 10);
         }
 
         // ── Lifecycle ────────────────────────────────────────────────────────
@@ -576,6 +572,9 @@ namespace ArcadeShellSelector
             _soundOut?.Stop();   _soundOut?.Dispose();
             _soundReader?.Dispose();
             _font.Dispose();
+            foreach (var br in _brushCache.Values) br.Dispose();
+            _brushCache.Clear();
+            _hintFont?.Dispose();
         }
 
         // ── Helpers ──────────────────────────────────────────────────────────

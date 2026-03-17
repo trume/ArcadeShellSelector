@@ -17,6 +17,7 @@ namespace ArcadeShellSelector
         private float _playbackRate = 1.0f;
         public bool Available { get; private set; } = true;
         public string? LastError { get; private set; }
+        private readonly Action _replayAction = null!;
 
         public VideoBackground()
         {
@@ -25,6 +26,7 @@ namespace ArcadeShellSelector
                 _libVlc = LibVlcManager.Instance;
                 _player = new MediaPlayer(_libVlc);
                 View = new VideoView { MediaPlayer = _player };
+                _replayAction = () => PlayLoop(_currentPath!);
 
                 _player.EndReached += (_, __) =>
                 {
@@ -32,7 +34,7 @@ namespace ArcadeShellSelector
                     if (string.IsNullOrWhiteSpace(_currentPath)) return;
                     if (View.IsHandleCreated && View.InvokeRequired)
                     {
-                        try { View.BeginInvoke(new Action(() => PlayLoop(_currentPath!))); } catch { }
+                        try { View.BeginInvoke(_replayAction); } catch { }
                     }
                     else
                     {

@@ -28,11 +28,22 @@ namespace ArcadeShellSelector
         // Smoothed band levels for display
         private readonly float[] _smoothBands;
 
+        // Pre-allocated FFT working arrays (reused every ProcessFft call)
+        private readonly float[] _fftReal = new float[FftSize];
+        private readonly float[] _fftImag = new float[FftSize];
+        private readonly float[] _fftMag = new float[FftSize / 2];
+        private readonly int[] _bandEdges;
+        private readonly float[] _newBands;
+        private readonly float[] _bandRefLevel;
+
         public SpectrumAnalyzer(int bandCount = 6)
         {
             BandCount = Math.Clamp(bandCount, 2, 32);
             _bands = new float[BandCount];
             _smoothBands = new float[BandCount];
+            _bandEdges = new int[BandCount + 1];
+            _newBands = new float[BandCount];
+            _bandRefLevel = new float[BandCount];
         }
 
         /// <summary>Get a snapshot of the current 6 band levels (0.0–1.0).</summary>
@@ -48,6 +59,12 @@ namespace ArcadeShellSelector
         public void Start()
         {
             if (_disposed) return;
+
+            // Stop any existing capture to prevent leaking a previous instance
+            try { _capture?.StopRecording(); } catch { }
+            try { _capture?.Dispose(); } catch { }
+            _capture = null;
+
             try
             {
                 // Use shortest possible capture buffer for minimal latency
@@ -113,9 +130,10 @@ namespace ArcadeShellSelector
 
         private void ProcessFft()
         {
-            // Copy buffer and apply Hann window
-            var real = new float[FftSize];
-            var imag = new float[FftSize];
+            // Copy buffer and apply Hann window (reuse pre-allocated arrays)
+            var real = _fftReal;
+            var imag = _fftImag;
+            Array.Clear(imag);
             for (int i = 0; i < FftSize; i++)
             {
                 float window = 0.5f * (1f - MathF.Cos(2f * MathF.PI * i / (FftSize - 1)));
@@ -127,7 +145,7 @@ namespace ArcadeShellSelector
 
             // Compute magnitudes for the first half of the spectrum
             int halfN = FftSize / 2;
-            var mag = new float[halfN];
+            var mag = _fftMag;
             for (int i = 0; i < halfN; i++)
                 mag[i] = MathF.Sqrt(real[i] * real[i] + imag[i] * imag[i]);
 
@@ -136,12 +154,12 @@ namespace ArcadeShellSelector
             float binHz = sampleRate / FftSize;
 
             // Band frequency edges (Hz) — logarithmic spacing from 20 Hz to 20 kHz
-            var bandEdges = new int[BandCount + 1];
+            var bandEdges = _bandEdges;
             const double freqLo = 20.0, freqHi = 20000.0;
             for (int i = 0; i <= BandCount; i++)
                 bandEdges[i] = (int)(freqLo * Math.Pow(freqHi / freqLo, (double)i / BandCount));
 
-            var newBands = new float[BandCount];
+            var newBands = _newBands;
             for (int b = 0; b < BandCount; b++)
             {
                 int binStart = Math.Max(1, (int)(bandEdges[b] / binHz));
@@ -160,7 +178,7 @@ namespace ArcadeShellSelector
             // so they need a higher threshold to avoid saturation.
             // Per-band reference levels: low bands have much more energy.
             // Generate dynamically based on band count, scaling from 0.1 (bass) to 0.003 (treble).
-            var bandRefLevel = new float[BandCount];
+            var bandRefLevel = _bandRefLevel;
             for (int b = 0; b < BandCount; b++)
                 bandRefLevel[b] = (float)(0.1 * Math.Pow(0.003 / 0.1, (double)b / (BandCount - 1)));
             const float dbRange = 50f;

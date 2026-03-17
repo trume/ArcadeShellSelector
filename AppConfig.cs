@@ -124,13 +124,13 @@ namespace ArcadeShellSelector
         public string ToolsRoot { get; set; } = string.Empty;
 
         [JsonPropertyName("imagesRoot")]
-        public string ImagesRoot { get; set; } = string.Empty;
+        public string ImagesRoot { get; set; } = "Media\\Img";
 
         [JsonPropertyName("networkWaitSeconds")]
         public int NetworkWaitSeconds { get; set; } = 15;
 
         [JsonPropertyName("videoBackground")]
-        public string VideoBackground { get; set; } = string.Empty;
+        public string VideoBackground { get; set; } = "Media\\Bkg\\background.mp4";
 
         [JsonPropertyName("videoPlaybackRate")]
         public float VideoPlaybackRate { get; set; } = 1.0f;

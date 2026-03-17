@@ -27,7 +27,6 @@ namespace ArcadeShellSelector
 
         private readonly List<string> _tracks;
         private Media? _currentMedia;
-        private string? _lastError;
         private readonly string? _audioDevice;
         private readonly int _configuredVolume;
         private readonly bool _playRandom;
@@ -69,10 +68,16 @@ namespace ArcadeShellSelector
                     {
                         // Avoid repeating the same track when there are alternatives
                         var current = CurrentTrackPath;
-                        var candidates = _tracks.Count > 1
-                            ? _tracks.Where(t => !string.Equals(t, current, StringComparison.OrdinalIgnoreCase)).ToList()
-                            : _tracks;
-                        var next = candidates[new Random().Next(candidates.Count)];
+                        string next;
+                        if (_tracks.Count > 1)
+                        {
+                            do { next = _tracks[Random.Shared.Next(_tracks.Count)]; }
+                            while (string.Equals(next, current, StringComparison.OrdinalIgnoreCase));
+                        }
+                        else
+                        {
+                            next = _tracks[0];
+                        }
                         PlayPath(next);
                     }
                     else
@@ -82,8 +87,8 @@ namespace ArcadeShellSelector
                 }
                 catch { }
             };
-            _mediaPlayer.EncounteredError += (_, __) => { _lastError = "Playback encountered an error."; try { LogMusicError("Player event: EncounteredError"); } catch { } };
-            _mediaPlayer.Playing += (_, __) => { _lastError = null; try { LogDebug("Player event: Playing"); } catch { } };
+            _mediaPlayer.EncounteredError += (_, __) => { LastError = "Playback encountered an error."; try { LogMusicError("Player event: EncounteredError"); } catch { } };
+            _mediaPlayer.Playing += (_, __) => { LastError = null; try { LogDebug("Player event: Playing"); } catch { } };
             _mediaPlayer.Paused += (_, __) => { try { LogDebug("Player event: Paused"); } catch { } };
             _mediaPlayer.Buffering += (_, a) => { try { LogDebug($"Player event: Buffering {a}%"); } catch { } };
 
@@ -167,11 +172,11 @@ namespace ArcadeShellSelector
                     // Try to find the selected file in the track list
                     path = _tracks.FirstOrDefault(t =>
                         string.Equals(Path.GetFileName(t), _selectedFile, StringComparison.OrdinalIgnoreCase))
-                        ?? _tracks[new Random().Next(0, _tracks.Count)];
+                        ?? _tracks[Random.Shared.Next(0, _tracks.Count)];
                 }
                 else
                 {
-                    path = _tracks[new Random().Next(0, _tracks.Count)];
+                    path = _tracks[Random.Shared.Next(0, _tracks.Count)];
                 }
 
                 try { LogDebug($"Start selected track: {path}"); } catch { }
@@ -286,10 +291,10 @@ namespace ArcadeShellSelector
 
                 _mediaPlayer!.Media = _currentMedia;
                 bool started = false;
-                try { started = _mediaPlayer?.Play() ?? false; } catch (Exception ex) { _lastError = ex.Message; try { LogMusicError("Play exception: " + ex.Message); } catch { } }
+                try { started = _mediaPlayer?.Play() ?? false; } catch (Exception ex) { LastError = ex.Message; try { LogMusicError("Play exception: " + ex.Message); } catch { } }
                 if (!started)
                 {
-                    _lastError ??= "Failed to start playback (LibVLC returned false).";
+                    LastError ??= "Failed to start playback (LibVLC returned false).";
                     try { LogMusicWarn("Play returned false for media: " + path); } catch { }
                 }
                 else
@@ -309,7 +314,7 @@ namespace ArcadeShellSelector
             }
             catch (Exception ex)
             {
-                _lastError ??= "Exception while attempting to play media.";
+                LastError ??= "Exception while attempting to play media.";
                 try { LogMusicError("PlayPath exception: " + ex.Message); } catch { }
             }
         }

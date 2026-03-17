@@ -48,6 +48,7 @@ namespace ArcadeShellSelector
             int totalGaps = (bands - 1) * gap;
             int barWidth = Math.Max(3, (Width - totalGaps) / bands);
 
+            using var brush = new SolidBrush(BarColor);
             for (int i = 0; i < bands; i++)
             {
                 float level = Math.Clamp(_levels[i], 0f, 1f);
@@ -55,7 +56,6 @@ namespace ArcadeShellSelector
                 int x = i * (barWidth + gap);
                 int y = Height - barHeight;
 
-                using var brush = new SolidBrush(BarColor);
                 g.FillRectangle(brush, x, y, barWidth, barHeight);
             }
         }

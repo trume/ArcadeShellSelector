@@ -22,6 +22,10 @@
 .PARAMETER StripPdb
     Remove *.pdb debug symbol files from the deploy folder before zipping.
 
+.PARAMETER BuildInstaller
+    After packaging, invoke Inno Setup (ISCC.exe) to produce a setup EXE.
+    Requires Inno Setup 6 installed. The script auto-detects its location.
+
 .PARAMETER Version
     Version string embedded in the ZIP filename.
     Defaults to the <Version> value in ArcadeShellSelector.csproj + short git commit hash.
@@ -32,6 +36,7 @@
     .\publish.ps1 -SelfContained
     .\publish.ps1 -SelfContained -StripPdb -Version "1.0.0"
     .\publish.ps1 -SkipBuild
+    .\publish.ps1 -BuildInstaller
 #>
 
 [CmdletBinding()]
@@ -39,6 +44,7 @@ param(
     [switch] $SelfContained,
     [switch] $SkipBuild,
     [switch] $StripPdb,
+    [switch] $BuildInstaller,
     [string] $Version = ""
 )
 
@@ -225,15 +231,15 @@ $cleanConfig = @'
   },
   "paths": {
     "toolsRoot": "",
-    "imagesRoot": "",
+    "imagesRoot": "Media\\Img",
     "networkWaitSeconds": 15,
-    "videoBackground": ""
+    "videoBackground": "Media\\Bkg\\background.mp4"
   },
   "options": [],
   "music": {
-    "enabled": false,
-    "musicRoot": "",
-    "playRandom": false,
+    "enabled": true,
+    "musicRoot": "Media\\Music",
+    "playRandom": true,
     "selectedFile": "",
     "volume": 100,
     "audioDevice": "",
@@ -323,5 +329,39 @@ if ($SelfContained) {
 } else {
     Write-Host "  2. Install .NET 10 Desktop Runtime: https://dotnet.microsoft.com/download"
     Write-Host "  3. Run ArcadeShellSelector.exe"
+}
+
+# --- 9. Build Inno Setup installer (optional) ---
+if ($BuildInstaller) {
+    Write-Step "Building Inno Setup installer"
+    $issFile = Join-Path $root "setup.iss"
+    if (-not (Test-Path $issFile)) {
+        Write-Warning "setup.iss not found at: $issFile — skipping installer build."
+    } else {
+        # Auto-detect ISCC.exe
+        $isccCmd = Get-Command "ISCC.exe" -ErrorAction SilentlyContinue
+        $isccPaths = @(
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
+        )
+        if ($isccCmd) { $isccPaths += $isccCmd.Source }
+        $iscc = $isccPaths | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+
+        if (-not $iscc) {
+            Write-Warning "Inno Setup (ISCC.exe) not found. Install it from https://jrsoftware.org/isinfo.php"
+        } else {
+            Write-Host "  Using: $iscc"
+            & $iscc "/DAppVersion=$($Version -replace '\+.*','')" $issFile
+            if ($LASTEXITCODE -ne 0) {
+                Write-Error "Inno Setup compilation failed."
+            } else {
+                $setupExe = Get-ChildItem (Join-Path $root "deploy") -Filter "ArcadeShellSetup-*.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+                if ($setupExe) {
+                    $setupSize = [math]::Round($setupExe.Length / 1MB, 1)
+                    Write-Host "  Setup EXE     : $($setupExe.FullName) ($setupSize MB)" -ForegroundColor Green
+                }
+            }
+        }
+    }
 }
 

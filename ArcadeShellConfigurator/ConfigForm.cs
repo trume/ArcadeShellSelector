@@ -2843,11 +2843,17 @@ namespace ArcadeShellConfigurator
             {
                 var imgPath = row.Cells["ImagePath"].Value?.ToString();
                 using var dlg = new OpenFileDialog { Filter = "Images|*.png;*.jpg;*.bmp;*.gif|All files|*.*" };
+                var defaultImgDir = Path.Combine(Path.GetDirectoryName(_configPath) ?? ".", "Media", "Img");
                 if (!string.IsNullOrWhiteSpace(imgPath))
                 {
                     if (File.Exists(imgPath)) dlg.FileName = imgPath;
                     else if (Directory.Exists(Path.GetDirectoryName(imgPath))) dlg.InitialDirectory = Path.GetDirectoryName(imgPath);
+                    else if (Directory.Exists(defaultImgDir)) dlg.InitialDirectory = defaultImgDir;
                     else if (Directory.Exists(_config.Paths.ImagesRoot)) dlg.InitialDirectory = _config.Paths.ImagesRoot;
+                }
+                else if (Directory.Exists(defaultImgDir))
+                {
+                    dlg.InitialDirectory = defaultImgDir;
                 }
                 else if (Directory.Exists(_config.Paths.ImagesRoot))
                 {
@@ -2877,10 +2883,16 @@ namespace ArcadeShellConfigurator
             {
                 var vidPath = row.Cells["ThumbVideoPath"].Value?.ToString();
                 using var dlg = new OpenFileDialog { Filter = "Video files|*.mp4;*.avi;*.mkv;*.wmv|All files|*.*" };
+                var defaultVideoDir = Path.Combine(Path.GetDirectoryName(_configPath) ?? ".", "Media", "Video");
                 if (!string.IsNullOrWhiteSpace(vidPath))
                 {
                     if (File.Exists(vidPath)) dlg.FileName = vidPath;
                     else if (Directory.Exists(Path.GetDirectoryName(vidPath))) dlg.InitialDirectory = Path.GetDirectoryName(vidPath);
+                    else if (Directory.Exists(defaultVideoDir)) dlg.InitialDirectory = defaultVideoDir;
+                }
+                else if (Directory.Exists(defaultVideoDir))
+                {
+                    dlg.InitialDirectory = defaultVideoDir;
                 }
                 if (dlg.ShowDialog() != DialogResult.OK) return;
 

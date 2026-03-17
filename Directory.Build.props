@@ -9,5 +9,7 @@
     <Company>Trume76</Company>
     <Product>ArcadeShellSelector</Product>
     <Copyright>© 2026 Trume76</Copyright>
+    <!-- Only ship English + Spanish satellite assemblies -->
+    <SatelliteResourceLanguages>en;es</SatelliteResourceLanguages>
   </PropertyGroup>
 </Project>

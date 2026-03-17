@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Inno Setup installer** — New `setup.iss` script produces a single-EXE installer for deploying to arcade machines. Features: install directory selection (default `C:\ArcadeShell`), optional Windows shell replacement with backup/restore, optional firewall rule for the remote server, desktop shortcut, post-install Configurator launch, silent install (`/SILENT`), and a clean uninstaller that restores Explorer as shell. Integrated into `publish.ps1` via `-BuildInstaller` flag.
+- **Auth rate limiting** — `POST /api/auth` now enforces a maximum of 5 PIN attempts per IP address within a 60-second window, returning HTTP 429 when exceeded. Prevents brute-force PIN attacks.
+- **Global exception handler middleware** — Unhandled exceptions in any endpoint are now caught, logged via `DebugLogger`, and returned as a safe `500 { "error": "Internal server error" }` JSON response instead of leaking stack traces.
+- **Temp file cleanup on startup** — Leftover `.tmp` files from interrupted config saves are automatically deleted when the server starts.
+
+### Fixed
+- **`PUT /api/config` I/O errors unhandled** — File write operations (`IOException`, `UnauthorizedAccessException`) are now caught and returned as proper HTTP 500/403 JSON errors instead of bubbling up as unhandled exceptions.
+- **`GET /api/config` exception safety** — Config load errors are now caught and logged, returning a structured JSON 500 response instead of an opaque status code.
+- **`GET /api/status` exception safety** — Status endpoint errors are now caught and logged with a structured JSON 500 response.
+- **`POST /api/auth` malformed body crash** — Malformed JSON in the auth request body is now caught (`JsonException`) and returned as HTTP 400 instead of crashing the request pipeline.
+- **`LoadImageNoLock` double allocation** — Images were read into bytes, decoded, then `.Clone()`'d (two GDI+ objects). Now decodes directly from the `MemoryStream` without cloning. Removed leftover `Debug.WriteLine` and commented-out `MessageBox.Show` debug artifacts.
+- **Font leak in `CreateOptionLabel`** — Each call created a `new Font(...)` that was never disposed. Now uses a single shared `static readonly` font instance.
+- **`_fadeForm` leak on close** — If the launcher was closed during a fade transition, the fade overlay `Form` was never disposed. `OnFormClosed` now cleans it up.
+- **`MusicPlayer` duplicate error field** — Private `_lastError` field and public `LastError` property were set independently; event handlers wrote to the field, leaving the property stale. Removed the private field; all code now writes to `LastError` directly.
+- **`MusicPlayer` `new Random()` per track** — `EndReached` and `Start()` created `new Random()` on every call, risking duplicate seeds. Replaced with `Random.Shared`.
+- **Server token store not thread-safe** — `validTokens` was a plain `Dictionary` accessed from concurrent Kestrel threads. Changed to `ConcurrentDictionary` with `TryRemove` for pruning.
+- **XInput/DInput polling race during child launch** — `XinputTimer_Tick` and `DinputTimer_Tick` checked `_closing` but not `_childRunning`, allowing input events in the gap between the click and timer stop. Both now return early when `_childRunning` is true.
+- **`SpectrumAnalyzer.Start()` leaks on double call** — Calling `Start()` twice created a second `WasapiLoopbackCapture` without disposing the first. Now stops and disposes any existing capture before creating a new one.
+- **Inconsistent deadzone constants** — XInput used `16000` (~49%) while DInput used `16384` (~50%). Unified both to `16384`.
+
+### Performance
+- **`SpectrumPanel` brush allocation in paint loop** — `new SolidBrush(BarColor)` was created inside the `for` loop on every frame (~360 allocations/sec at 60 FPS). Moved to a single allocation before the loop.
+- **`SpectrumAnalyzer` per-call FFT array allocations** — `ProcessFft()` allocated 6 arrays (`real[1024]`, `imag[1024]`, `mag[512]`, `bandEdges[7]`, `newBands[6]`, `bandRefLevel[6]`) on every call (~47 times/sec). Promoted to pre-allocated class fields, reused each call.
+- **`BootSplash` per-paint GDI+ allocations** — `Canvas_Paint` created ~100 `SolidBrush` instances per frame (one per printed line, cursor, CRT overlays), plus a `new Font` and `MeasureString` call for the hint text. Replaced with a `Dictionary<Color, SolidBrush>` cache, cached hint `Font`, and cached hint `SizeF`.
+- **`MusicPlayer` LINQ allocation on track change** — `.Where().ToList()` allocated a filtered list on every `EndReached` event. Replaced with a simple retry loop that re-rolls until a different track is picked.
+- **`VideoBackground` delegate allocation per loop** — `new Action(() => PlayLoop(...))` was allocated on every `EndReached` event. Cached as a readonly field initialized once in the constructor.
+
 ## [1.2.9] - 2026-03-13
 
 ### Added

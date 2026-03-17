@@ -132,7 +132,7 @@ namespace ArcadeShellSelector
 
         private void XinputTimer_Tick(object? sender, EventArgs e)
         {
-            if (_closing) return;
+            if (_closing || _childRunning) return;
             if (!xinputController.IsConnected)
                 return;
 
@@ -166,7 +166,7 @@ namespace ArcadeShellSelector
             }
 
             // Left stick axis — only active when the corresponding direction is in DPad/axis mode
-            const short stickDeadzone = 16000; // ~49% of 32767
+            const short stickDeadzone = 16384; // ~50% of 32767
             bool stickLeft  = gp.LeftThumbX < -stickDeadzone;
             bool stickRight = gp.LeftThumbX >  stickDeadzone;
             bool wasStickLeft  = _lastXInputStickLeft;
@@ -267,7 +267,7 @@ namespace ArcadeShellSelector
 
         private void DinputTimer_Tick(object? sender, EventArgs e)
         {
-            if (_closing) return;
+            if (_closing || _childRunning) return;
             if (_dinputJoystick == null) return;
             try
             {
@@ -298,7 +298,7 @@ namespace ArcadeShellSelector
 
                     // SharpDX JoystickState axes are 0–65535, center ≈ 32767
                     const int center = 32767;
-                    const int deadzone = 16384; // ~50% of half-range
+                    const int deadzone = 16384; // ~50% of half-range (same as XInput stickDeadzone)
                     int xOffset = state.X - center;
                     if (xOffset < -deadzone)
                         axisDir = -1;
@@ -674,29 +674,26 @@ namespace ArcadeShellSelector
 
             if (string.IsNullOrWhiteSpace(baseDir))
                 return maybeRelative;
-            // MessageBox.Show($"{baseDir}", "Config error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-          
+
             return Path.Combine(baseDir, maybeRelative);
-           
         }
 
         private static Image? LoadImageNoLock(string path)
         {
             try
             {
-                // MessageBox.Show($"{path}", "Config error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                Debug.WriteLine($"Attempting to load image from path: {path}");
                 if (!File.Exists(path)) return null;
                 var bytes = File.ReadAllBytes(path);
-                using var ms = new MemoryStream(bytes);
-                using var temp = Image.FromStream(ms);
-                return (Image)temp.Clone();
+                var ms = new MemoryStream(bytes);
+                return Image.FromStream(ms);
             }
-            catch 
+            catch
             {
                 return null;
             }
         }
+
+        private static readonly Font _optionLabelFont = new(ThemeResolver.Launcher.Font, 20F, FontStyle.Bold);
 
         private static Label CreateOptionLabel(string text)
         {
@@ -706,7 +703,7 @@ namespace ArcadeShellSelector
                 ForeColor = ThemeResolver.Launcher.Title,
                 BackColor = Color.Transparent,
                 AutoSize = true,
-                Font = new Font(ThemeResolver.Launcher.Font, 20F, FontStyle.Bold),
+                Font = _optionLabelFont,
                 TextAlign = ContentAlignment.MiddleCenter
             };
         }
@@ -1609,6 +1606,10 @@ namespace ArcadeShellSelector
 
             try { videoBackground?.Stop(); } catch (Exception ex) { DebugLogger.Error("CLOSE", $"VideoBackground stop: {ex.Message}"); }
             try { videoBackground?.Dispose(); } catch (Exception ex) { DebugLogger.Error("CLOSE", $"VideoBackground dispose: {ex.Message}"); }
+
+            // Dispose fade overlay if still alive (can happen if close during fade)
+            try { _fadeForm?.Close(); _fadeForm?.Dispose(); _fadeForm = null; } catch { }
+
             base.OnFormClosed(e);
         }
 
